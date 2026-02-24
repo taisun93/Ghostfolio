@@ -35,7 +35,7 @@ export class GfAuthPageComponent implements OnDestroy, OnInit {
           this.settingsStorageService.getSetting(KEY_STAY_SIGNED_IN) === 'true'
         );
 
-        this.router.navigate(['/']);
+        this.router.navigate(jwt === 'demo-token' ? ['/dashboard'] : ['/']);
       });
   }
 

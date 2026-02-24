@@ -27,7 +27,19 @@
             </a>
           </div>
           <div class="landing-cta">
+            @if (hasPermissionForAuthGoogle) {
+              <a
+                class="landing-btn landing-btn-primary"
+                href="/api/v1/auth/google"
+                mat-flat-button
+                i18n
+                >Log in with Google</a
+              >
+            }
             @if (hasPermissionToCreateUser) {
+              @if (hasPermissionForAuthGoogle) {
+                <span class="landing-cta-sep" i18n>or</span>
+              }
               <a
                 class="landing-btn landing-btn-primary"
                 mat-flat-button
@@ -37,7 +49,7 @@
               >
             }
             @if (hasPermissionForDemo) {
-              @if (hasPermissionToCreateUser) {
+              @if (hasPermissionToCreateUser || hasPermissionForAuthGoogle) {
                 <span class="landing-cta-sep" i18n>or</span>
               }
               <a
@@ -316,15 +328,31 @@
               }
             </p>
             <div class="d-flex justify-content-center py-2 flex-wrap">
-              <a
-                class="landing-btn landing-btn-primary"
-                mat-flat-button
-                [routerLink]="routerLinkRegister"
-                i18n
-                >Get Started</a
-              >
+              @if (hasPermissionForAuthGoogle) {
+                <a
+                  class="landing-btn landing-btn-primary"
+                  href="/api/v1/auth/google"
+                  mat-flat-button
+                  i18n
+                  >Log in with Google</a
+                >
+              }
+              @if (hasPermissionToCreateUser) {
+                @if (hasPermissionForAuthGoogle) {
+                  <span class="landing-cta-sep" i18n>or</span>
+                }
+                <a
+                  class="landing-btn landing-btn-primary"
+                  mat-flat-button
+                  [routerLink]="routerLinkRegister"
+                  i18n
+                  >Get Started</a
+                >
+              }
               @if (hasPermissionForDemo) {
-                <span class="landing-cta-sep" i18n>or</span>
+                @if (hasPermissionToCreateUser || hasPermissionForAuthGoogle) {
+                  <span class="landing-cta-sep" i18n>or</span>
+                }
                 <a class="landing-btn landing-btn-outline" i18n mat-stroked-button [routerLink]="routerLinkDemo">
                   Live Demo
                 </a>

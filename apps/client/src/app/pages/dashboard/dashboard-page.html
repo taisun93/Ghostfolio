@@ -1,0 +1,56 @@
+<div class="dashboard">
+  <div class="dashboard-bg"></div>
+  <div class="container dashboard-content">
+    <header class="dashboard-header">
+      <h1 class="dashboard-title" i18n>Dashboard</h1>
+      <p class="dashboard-subtitle" i18n>Welcome back. Here’s your portfolio at a glance.</p>
+    </header>
+
+    <section class="dashboard-cards">
+      <div class="dashboard-card dashboard-card-hero">
+        <span class="dashboard-card-label" i18n>Net worth</span>
+        <p class="dashboard-card-value">{{ netWorth | number:'1.2-2' }} <span class="currency">USD</span></p>
+        <span class="dashboard-card-meta" i18n>As of today</span>
+      </div>
+
+      <div class="dashboard-card">
+        <h3 class="dashboard-card-heading" i18n>Allocation</h3>
+        <div class="allocation-bars">
+          @for (item of allocation; track item.label) {
+            <div class="allocation-row">
+              <span class="allocation-label">{{ item.label }}</span>
+              <div class="allocation-bar-wrap">
+                <div
+                  class="allocation-bar"
+                  [style.width.%]="item.value"
+                  [style.background]="item.color"
+                ></div>
+              </div>
+              <span class="allocation-pct">{{ item.value }}%</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="dashboard-card">
+        <h3 class="dashboard-card-heading" i18n>Recent activity</h3>
+        <ul class="activity-list">
+          @for (activity of recentActivity; track activity.symbol + activity.date) {
+            <li class="activity-item">
+              <span class="activity-symbol">{{ activity.symbol }}</span>
+              <span class="activity-type">{{ activity.type }}</span>
+              <span class="activity-date">{{ activity.date }}</span>
+              <span class="activity-value" [class.positive]="activity.value.startsWith('+')" [class.negative]="activity.value.startsWith('-')">{{ activity.value }}</span>
+            </li>
+          }
+        </ul>
+      </div>
+    </section>
+
+    <div class="dashboard-actions">
+      <a mat-flat-button color="primary" [routerLink]="routerLinkHome" i18n>
+        Open full portfolio
+      </a>
+    </div>
+  </div>
+</div>

@@ -9,7 +9,7 @@ export function GET() {
     baseCurrency: 'USD',
     benchmarks: [],
     currencies: ['USD'],
-    globalPermissions: []
+    globalPermissions: ['enableAuthGoogle', 'createUserAccount']
   };
   return new Response(JSON.stringify(body), {
     headers: { 'Content-Type': 'application/json' },

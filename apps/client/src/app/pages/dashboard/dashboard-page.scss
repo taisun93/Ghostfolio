@@ -1,0 +1,214 @@
+$bg: #0d1117;
+$bg-card: #161b22;
+$border: rgba(255, 255, 255, 0.12);
+$text: #e6edf3;
+$text-muted: #8b949e;
+$accent: #36cfcc;
+
+:host {
+  display: block;
+}
+
+.dashboard {
+  min-height: 100%;
+  padding: 2rem 0 3rem;
+  position: relative;
+  background: $bg;
+  color: $text;
+}
+
+.dashboard-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 40% at 50% -10%, rgba(54, 207, 204, 0.12), transparent),
+    radial-gradient(ellipse 50% 30% at 90% 60%, rgba(88, 166, 255, 0.08), transparent);
+  pointer-events: none;
+}
+
+.dashboard-content {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.dashboard-title {
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.25rem;
+  color: $text;
+}
+
+.dashboard-subtitle {
+  margin: 0;
+  font-size: 1rem;
+  color: $text-muted;
+}
+
+.dashboard-cards {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+  margin-bottom: 2rem;
+
+  @media (min-width: 768px) {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  @media (min-width: 992px) {
+    grid-template-columns: 1.2fr 1fr;
+  }
+}
+
+.dashboard-card {
+  background: $bg-card;
+  border: 1px solid $border;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.dashboard-card-hero {
+  grid-column: 1 / -1;
+  padding: 2rem;
+  text-align: center;
+
+  @media (min-width: 768px) {
+    grid-column: span 1;
+    text-align: left;
+  }
+}
+
+.dashboard-card-label {
+  display: block;
+  font-size: 0.875rem;
+  color: $text-muted;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dashboard-card-value {
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.25rem;
+
+  .currency {
+    font-size: 0.6em;
+    font-weight: 500;
+    color: $text-muted;
+    margin-left: 0.25rem;
+  }
+}
+
+.dashboard-card-meta {
+  font-size: 0.8125rem;
+  color: $text-muted;
+}
+
+.dashboard-card-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: $text;
+}
+
+.allocation-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.allocation-row {
+  align-items: center;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 70px 1fr 36px;
+}
+
+.allocation-label {
+  font-size: 0.875rem;
+  color: $text-muted;
+}
+
+.allocation-bar-wrap {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.allocation-bar {
+  border-radius: 6px;
+  height: 100%;
+  min-width: 4px;
+  transition: width 0.4s ease;
+}
+
+.allocation-pct {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: $text-muted;
+  text-align: right;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-item {
+  align-items: center;
+  border-bottom: 1px solid $border;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 3rem 1fr 4rem 5rem;
+  padding: 0.75rem 0;
+  font-size: 0.875rem;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.activity-symbol {
+  font-weight: 600;
+  color: $text;
+}
+
+.activity-type {
+  color: $text-muted;
+}
+
+.activity-date {
+  color: $text-muted;
+  font-size: 0.8125rem;
+}
+
+.activity-value {
+  font-weight: 500;
+  text-align: right;
+
+  &.positive {
+    color: #7ee787;
+  }
+
+  &.negative {
+    color: #ff7b72;
+  }
+}
+
+.dashboard-actions {
+  display: flex;
+  justify-content: center;
+
+  a {
+    text-decoration: none;
+  }
+}
