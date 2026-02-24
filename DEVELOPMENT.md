@@ -89,7 +89,7 @@ When using the stub API (no backend proxy), AI Commands chat history is stored i
 
 1. Create a Postgres database (e.g. [Neon](https://neon.tech) or add **Vercel Postgres** / **Neon** from the [Vercel Marketplace](https://vercel.com/marketplace)).
 2. In the Vercel project, set **Environment Variable** `POSTGRES_URL` or `DATABASE_URL` to your connection string (e.g. `postgresql://user:pass@host/db?sslmode=require`).
-3. The table `ai_chat_messages` is created automatically on first request (user_id, role, content, created_at). No migration needed.
+3. The table `ai_chat_conversations` is created automatically on first request: one row per conversation per user, with a `messages` jsonb column holding the full conversation array. No migration needed. (If you had the previous `ai_chat_messages` table, you can drop it.)
 
 Users are identified by the same Bearer token they use for the stub login; when you switch to a real API, use the real user id from the JWT instead.
 

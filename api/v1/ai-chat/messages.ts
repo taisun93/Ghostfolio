@@ -1,11 +1,13 @@
 /**
- * GET: return AI chat message history for the authenticated user.
- * POST: append one message (body: { role: 'user'|'assistant', content: string }).
+ * GET: return messages from the user's latest conversation (one-to-many: user -> conversations).
+ * POST: append one message to the latest conversation (or create one); entire conversation stored as JSON. Processing on server.
  * Requires Bearer token. Uses POSTGRES_URL or DATABASE_URL (Neon/Vercel Postgres).
  */
 import { neon } from '@neondatabase/serverless';
 
 export const config = { runtime: 'edge' };
+
+type MessageRow = { id: string; role: string; text: string; at: string };
 
 function getUserId(req: Request): string | null {
   const auth = req.headers.get('Authorization') || '';
@@ -15,18 +17,31 @@ function getUserId(req: Request): string | null {
 
 async function ensureTable(sql: ReturnType<typeof neon>) {
   await sql`
-    CREATE TABLE IF NOT EXISTS ai_chat_messages (
+    CREATE TABLE IF NOT EXISTS ai_chat_conversations (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id text NOT NULL,
-      role text NOT NULL,
-      content text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
+      messages jsonb NOT NULL DEFAULT '[]',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
     )
   `;
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_user_created
-    ON ai_chat_messages (user_id, created_at)
+    CREATE INDEX IF NOT EXISTS idx_ai_chat_conversations_user_updated
+    ON ai_chat_conversations (user_id, updated_at DESC)
   `;
+}
+
+function parseMessages(messages: unknown): MessageRow[] {
+  if (!Array.isArray(messages)) return [];
+  return messages.filter(
+    (m): m is MessageRow =>
+      m != null &&
+      typeof m === 'object' &&
+      typeof (m as MessageRow).id === 'string' &&
+      typeof (m as MessageRow).role === 'string' &&
+      typeof (m as MessageRow).text === 'string' &&
+      typeof (m as MessageRow).at === 'string'
+  );
 }
 
 export async function GET(req: Request) {
@@ -50,17 +65,14 @@ export async function GET(req: Request) {
     const sql = neon(connectionString);
     await ensureTable(sql);
     const rows = await sql`
-      SELECT id, role, content, created_at
-      FROM ai_chat_messages
+      SELECT messages
+      FROM ai_chat_conversations
       WHERE user_id = ${userId}
-      ORDER BY created_at ASC
+      ORDER BY updated_at DESC
+      LIMIT 1
     `;
-    const messages = rows.map((r: { id: string; role: string; content: string; created_at: string }) => ({
-      id: r.id,
-      role: r.role,
-      text: r.content,
-      at: r.created_at
-    }));
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    const messages = row ? parseMessages((row as { messages: unknown }).messages) : [];
     return new Response(JSON.stringify(messages), {
       headers: { 'Content-Type': 'application/json' },
       status: 200
@@ -112,18 +124,44 @@ export async function POST(req: Request) {
   try {
     const sql = neon(connectionString);
     await ensureTable(sql);
-    const inserted = await sql`
-      INSERT INTO ai_chat_messages (user_id, role, content)
-      VALUES (${userId}, ${role}, ${content})
-      RETURNING id, role, content, created_at
+    const now = new Date().toISOString();
+    const newMessage: MessageRow = {
+      id: crypto.randomUUID(),
+      role,
+      text: content,
+      at: now
+    };
+
+    const existing = await sql`
+      SELECT id, messages
+      FROM ai_chat_conversations
+      WHERE user_id = ${userId}
+      ORDER BY updated_at DESC
+      LIMIT 1
     `;
-    const row = Array.isArray(inserted) ? inserted[0] : inserted;
+    const row = Array.isArray(existing) ? existing[0] : existing;
+
+    if (row) {
+      const current = parseMessages((row as { messages: unknown }).messages);
+      const updated = [...current, newMessage];
+      await sql`
+        UPDATE ai_chat_conversations
+        SET messages = ${JSON.stringify(updated)}::jsonb, updated_at = ${now}::timestamptz
+        WHERE id = ${(row as { id: string }).id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
+        VALUES (${userId}, ${JSON.stringify([newMessage])}::jsonb, ${now}::timestamptz)
+      `;
+    }
+
     return new Response(
       JSON.stringify({
-        id: (row as { id: string }).id,
-        role: (row as { role: string }).role,
-        text: (row as { content: string }).content,
-        at: (row as { created_at: string }).created_at
+        id: newMessage.id,
+        role: newMessage.role,
+        text: newMessage.text,
+        at: newMessage.at
       }),
       { status: 201, headers: { 'Content-Type': 'application/json' } }
     );
