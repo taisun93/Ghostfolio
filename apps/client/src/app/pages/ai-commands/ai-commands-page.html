@@ -1,8 +1,38 @@
 <div class="ai-chat">
-  <div class="ai-chat-header">
-    <h1 class="ai-chat-title" i18n>AI Commands</h1>
-    <p class="ai-chat-subtitle" i18n>Ask about your portfolio or run actions in plain language.</p>
-  </div>
+  <header class="ai-chat-header">
+    <div class="ai-chat-header-top">
+      <div class="ai-chat-header-text">
+        <h1 class="ai-chat-title" i18n>AI Commands</h1>
+        <p class="ai-chat-subtitle" i18n>Ask about your portfolio or run actions in plain language.</p>
+      </div>
+      <button
+        class="ai-chat-new"
+        mat-stroked-button
+        type="button"
+        [disabled]="isLoadingHistory || isThinking"
+        (click)="startNewChat()"
+        i18n
+      >
+        New chat
+      </button>
+    </div>
+  </header>
+
+  @if (errorMessage) {
+    <div class="ai-chat-error" role="alert">
+      <span class="ai-chat-error-text">{{ errorMessage }}</span>
+      <button
+        class="ai-chat-error-dismiss"
+        mat-icon-button
+        type="button"
+        (click)="clearError()"
+        i18n-aria-label
+        aria-label="Dismiss error"
+      >
+        <span class="ai-chat-error-dismiss-icon" aria-hidden="true">×</span>
+      </button>
+    </div>
+  }
 
   <div class="ai-chat-messages" #messagesContainer>
     @if (isLoadingHistory) {
@@ -43,6 +73,7 @@
         (keydown.enter)="$event.preventDefault(); send()"
         [disabled]="isThinking || isLoadingHistory"
         placeholder="e.g. What is my total return?"
+        i18n-placeholder
       />
     </mat-form-field>
     <button

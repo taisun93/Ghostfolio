@@ -36,6 +36,7 @@ const WELCOME_TEXT = $localize`Hi. I'm your portfolio assistant. Ask about your 
 export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
   @ViewChild('messagesEnd') messagesEndRef: ElementRef<HTMLElement>;
 
+  public errorMessage: string | null = null;
   public inputText = '';
   public isLoadingHistory = true;
   public isThinking = false;
@@ -50,10 +51,15 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
 
   public ngOnDestroy() {}
 
+  public clearError() {
+    this.errorMessage = null;
+  }
+
   public send() {
     const text = this.inputText?.trim();
     if (!text || this.isThinking) return;
 
+    this.clearError();
     this.inputText = '';
     this.addUserMessage(text);
     this.persistMessage('user', text);
@@ -68,24 +74,46 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
       .post<{ content: string }>('/api/v1/ai/chat', { messages: messagesForApi })
       .pipe(
         catchError((err) => {
-          const message =
+          this.errorMessage =
             err?.error?.message ||
             err?.message ||
             $localize`Something went wrong. Check that the OpenAI API key is set in Ghostfolio settings.`;
-          return of({ content: message });
+          return of(null);
         })
       )
       .subscribe((res) => {
-        this.addAssistantMessage(res.content);
-        this.persistMessage('assistant', res.content);
         this.isThinking = false;
+        if (res?.content != null) {
+          this.addAssistantMessage(res.content);
+          this.persistMessage('assistant', res.content);
+        }
+        this.scrollToBottom();
+      });
+  }
+
+  public startNewChat() {
+    this.clearError();
+    this.http
+      .post<{ ok?: boolean }>('/api/v1/ai-chat/new', {})
+      .pipe(catchError(() => of({})))
+      .subscribe(() => {
+        this.messages = [
+          {
+            id: `msg-${++this.nextId}`,
+            role: 'assistant',
+            text: WELCOME_TEXT,
+            at: new Date()
+          }
+        ];
         this.scrollToBottom();
       });
   }
 
   private loadHistory() {
     this.http
-      .get<{ id: string; role: string; text: string; at: string }[]>('/api/v1/ai-chat/messages')
+      .get<{ id: string; role: string; text: string; at: string }[]>(
+        '/api/v1/ai-chat/messages'
+      )
       .pipe(catchError(() => of([])))
       .subscribe((list) => {
         if (Array.isArray(list) && list.length > 0) {
