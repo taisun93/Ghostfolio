@@ -69,10 +69,13 @@ export class AiChatService {
     }
 
     const graph = this.buildGraph(openAiKey);
-    const result = await graph.invoke({
+    const input = {
       messages: langchainMessages,
       portfolioContext: portfolioContext ?? undefined
-    });
+    };
+    const result = await graph.invoke(
+      input as Parameters<typeof graph.invoke>[0]
+    );
 
     const lastMessage = result.messages[result.messages.length - 1];
     const content =
@@ -128,25 +131,24 @@ export class AiChatService {
       temperature: 0.2
     });
 
-    const StateAnnotation = Annotation.Root({
-      messages: Annotation<BaseMessage[]>({
-        reducer: messagesStateReducer,
-        default: () => []
-      }),
-      portfolioContext: Annotation<string | undefined>({
-        default: () => undefined
-      })
-    });
-
     const StateWithRoute = Annotation.Root({
       messages: Annotation<BaseMessage[]>({
         reducer: messagesStateReducer,
         default: () => []
       }),
       portfolioContext: Annotation<string | undefined>({
+        value: (
+          left: string | undefined,
+          right: string | undefined
+        ): string | undefined =>
+          right !== undefined ? right : left,
         default: () => undefined
       }),
-      route: Annotation<string>({ default: () => 'general' })
+      route: Annotation<string>({
+        value: (left: string, right: string): string =>
+          right !== undefined && right !== '' ? right : left,
+        default: () => 'general'
+      })
     });
 
     const graphWithRoute = new StateGraph(StateWithRoute);
