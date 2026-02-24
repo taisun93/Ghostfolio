@@ -56,7 +56,6 @@
     "docs:pdf": "node docs/md-to-pdf.mjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.0",
     "@angular/animations": "21.1.1",
     "@angular/cdk": "21.1.1",
     "@angular/common": "21.1.1",
@@ -73,6 +72,10 @@
     "@internationalized/number": "3.6.5",
     "@ionic/angular": "8.7.8",
     "@keyv/redis": "4.4.0",
+    "@langchain/core": "^0.3.80",
+    "@langchain/langgraph": "^0.2.74",
+    "@langchain/openai": "^0.3.17",
+    "@neondatabase/serverless": "^0.10.0",
     "@nestjs/bull": "11.0.4",
     "@nestjs/cache-manager": "3.0.1",
     "@nestjs/common": "11.1.8",
@@ -137,6 +140,7 @@
     "tablemark": "4.1.0",
     "twitter-api-v2": "1.29.0",
     "yahoo-finance2": "3.13.0",
+    "zod": "^3.25.76",
     "zone.js": "0.16.0"
   },
   "devDependencies": {

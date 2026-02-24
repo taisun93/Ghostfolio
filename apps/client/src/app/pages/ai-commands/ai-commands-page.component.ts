@@ -16,7 +16,7 @@ export interface ChatMessage {
   at: Date;
 }
 
-const WELCOME_TEXT = $localize`Hi. I'm your portfolio assistant. Ask me anything—I'll echo it back backwards for now.`;
+const WELCOME_TEXT = $localize`Hi. I'm your portfolio assistant. Ask about your holdings, allocation, or anything else—I'll use your portfolio data when relevant.`;
 
 @Component({
   host: { class: 'page' },
@@ -59,14 +59,28 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
     this.persistMessage('user', text);
     this.isThinking = true;
 
-    setTimeout(() => {
-      const reversed = text.split('').reverse().join('');
-      this.addAssistantMessage(reversed);
-      this.persistMessage('assistant', reversed);
-      this.isThinking = false;
-      this.scrollToBottom();
-    }, 400 + Math.random() * 400);
-    this.scrollToBottom();
+    const messagesForApi = this.messages.map((m) => ({
+      role: m.role,
+      content: m.text
+    }));
+
+    this.http
+      .post<{ content: string }>('/api/v1/ai/chat', { messages: messagesForApi })
+      .pipe(
+        catchError((err) => {
+          const message =
+            err?.error?.message ||
+            err?.message ||
+            $localize`Something went wrong. Check that the OpenAI API key is set in Ghostfolio settings.`;
+          return of({ content: message });
+        })
+      )
+      .subscribe((res) => {
+        this.addAssistantMessage(res.content);
+        this.persistMessage('assistant', res.content);
+        this.isThinking = false;
+        this.scrollToBottom();
+      });
   }
 
   private loadHistory() {
