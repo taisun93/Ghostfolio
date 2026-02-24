@@ -6,7 +6,13 @@ import { Filter } from '@ghostfolio/common/interfaces';
 import { Injectable } from '@nestjs/common';
 import type { BaseMessage } from '@langchain/core/messages';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { Annotation, StateGraph, messagesStateReducer } from '@langchain/langgraph';
+import {
+  Annotation,
+  END,
+  messagesStateReducer,
+  StateGraph,
+  START
+} from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 
 const ROUTER_SYSTEM = `You are a router. Given the user message and whether portfolio data is available, reply with exactly one word: "portfolio" if the user is asking about their holdings, allocation, investments, or portfolio; otherwise reply "general".`;
@@ -196,13 +202,13 @@ export class AiChatService {
     graphWithRoute.addNode('portfolio_agent', portfolioAgentNode);
     graphWithRoute.addNode('general_agent', generalAgentNode);
 
-    graphWithRoute.addEdge('__start__', 'router');
+    graphWithRoute.addEdge(START, 'router');
     graphWithRoute.addConditionalEdges('router', (state) => state.route, {
       portfolio: 'portfolio_agent',
       general: 'general_agent'
     });
-    graphWithRoute.addEdge('portfolio_agent', '__end__');
-    graphWithRoute.addEdge('general_agent', '__end__');
+    graphWithRoute.addEdge('portfolio_agent', END);
+    graphWithRoute.addEdge('general_agent', END);
 
     return graphWithRoute.compile();
   }
