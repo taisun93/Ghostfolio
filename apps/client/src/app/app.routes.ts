@@ -43,15 +43,6 @@ export const routes: Routes = [
     title: internalRoutes.auth.title
   },
   {
-    canActivate: [AuthGuard],
-    loadComponent: () =>
-      import('./pages/ai-commands/ai-commands-page.component').then(
-        (c) => c.GfAiCommandsPageComponent
-      ),
-    path: internalRoutes.aiCommands.path,
-    title: internalRoutes.aiCommands.title
-  },
-  {
     path: publicRoutes.blog.path,
     loadChildren: () =>
       import('./pages/blog/blog-page.routes').then((m) => m.routes)

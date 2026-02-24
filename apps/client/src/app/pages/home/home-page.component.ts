@@ -19,6 +19,7 @@ import {
   albumsOutline,
   analyticsOutline,
   bookmarkOutline,
+  chatbubbleOutline,
   gridOutline,
   newspaperOutline,
   readerOutline
@@ -95,6 +96,11 @@ export class GfHomePageComponent implements OnDestroy, OnInit {
               )
                 ? internalRoutes.home.subRoutes.marketsPremium.routerLink
                 : internalRoutes.home.subRoutes.markets.routerLink
+            },
+            {
+              iconName: 'chatbubble-outline',
+              label: internalRoutes.home.subRoutes.aiCommands.title,
+              routerLink: internalRoutes.home.subRoutes.aiCommands.routerLink
             }
           ];
 
@@ -106,6 +112,7 @@ export class GfHomePageComponent implements OnDestroy, OnInit {
       albumsOutline,
       analyticsOutline,
       bookmarkOutline,
+      chatbubbleOutline,
       gridOutline,
       newspaperOutline,
       readerOutline

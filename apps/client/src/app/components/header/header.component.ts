@@ -88,6 +88,7 @@ export class GfHeaderComponent implements OnChanges {
   }
 
   @Input() currentRoute: string;
+  @Input() currentSubRoute: string;
   @Input() deviceType: string;
   @Input() hasPermissionToChangeDateRange: boolean;
   @Input() hasPermissionToChangeFilters: boolean;
@@ -114,6 +115,7 @@ export class GfHeaderComponent implements OnChanges {
   public hasPermissionToCreateUser: boolean;
   public impersonationId: string;
   public internalRoutes = internalRoutes;
+  public isAiCommandsActive: boolean;
   public isMenuOpen: boolean;
   public routeAbout = publicRoutes.about.path;
   public routeFeatures = publicRoutes.features.path;
@@ -124,7 +126,7 @@ export class GfHeaderComponent implements OnChanges {
   public routerLinkAccount = internalRoutes.account.routerLink;
   public routerLinkAccounts = internalRoutes.accounts.routerLink;
   public routerLinkAdminControl = internalRoutes.adminControl.routerLink;
-  public routerLinkAiCommands = internalRoutes.aiCommands.routerLink;
+  public routerLinkAiCommands = internalRoutes.home.subRoutes.aiCommands.routerLink;
   public routerLinkFeatures = publicRoutes.features.routerLink;
   public routerLinkMarkets = publicRoutes.markets.routerLink;
   public routerLinkPortfolio = internalRoutes.portfolio.routerLink;
@@ -165,6 +167,9 @@ export class GfHeaderComponent implements OnChanges {
   }
 
   public ngOnChanges() {
+    this.isAiCommandsActive =
+      this.currentRoute === internalRoutes.home.path &&
+      this.currentSubRoute === internalRoutes.home.subRoutes.aiCommands.path;
     this.hasFilters = this.userService.hasFilters();
 
     this.hasPermissionForAuthGoogle = hasPermission(

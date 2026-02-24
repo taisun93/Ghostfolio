@@ -9,6 +9,7 @@ import { internalRoutes } from '@ghostfolio/common/routes/routes';
 
 import { Routes } from '@angular/router';
 
+import { GfAiCommandsPageComponent } from '../ai-commands/ai-commands-page.component';
 import { GfDashboardPageComponent } from '../dashboard/dashboard-page.component';
 import { GfHomePageComponent } from './home-page.component';
 
@@ -19,6 +20,11 @@ export const routes: Routes = [
       {
         path: '',
         component: GfHomeOverviewComponent
+      },
+      {
+        path: internalRoutes.home.subRoutes.aiCommands.path,
+        component: GfAiCommandsPageComponent,
+        title: internalRoutes.home.subRoutes.aiCommands.title
       },
       {
         path: internalRoutes.home.subRoutes.dashboard.path,
@@ -49,6 +55,16 @@ export const routes: Routes = [
         path: internalRoutes.home.subRoutes.watchlist.path,
         component: GfHomeWatchlistComponent,
         title: internalRoutes.home.subRoutes.watchlist.title
+      },
+      {
+        path: internalRoutes.home.subRoutes.markets.path,
+        component: GfHomeMarketComponent,
+        title: internalRoutes.home.subRoutes.markets.title
+      },
+      {
+        path: internalRoutes.home.subRoutes.marketsPremium.path,
+        component: GfMarketsComponent,
+        title: internalRoutes.home.subRoutes.marketsPremium.title
       }
     ],
     component: GfHomePageComponent,

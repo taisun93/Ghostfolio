@@ -64,9 +64,8 @@
           i18n
           mat-flat-button
           [ngClass]="{
-            'font-weight-bold': currentRoute === internalRoutes.aiCommands.path,
-            'text-decoration-underline':
-              currentRoute === internalRoutes.aiCommands.path
+            'font-weight-bold': isAiCommandsActive,
+            'text-decoration-underline': isAiCommandsActive
           }"
           [routerLink]="routerLinkAiCommands"
           >AI Commands</a
@@ -285,9 +284,7 @@
             class="d-flex d-sm-none"
             i18n
             mat-menu-item
-            [ngClass]="{
-              'font-weight-bold': currentRoute === internalRoutes.aiCommands.path
-            }"
+            [ngClass]="{ 'font-weight-bold': isAiCommandsActive }"
             [routerLink]="routerLinkAiCommands"
             >AI Commands</a
           >
