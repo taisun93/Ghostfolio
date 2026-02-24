@@ -202,20 +202,24 @@ export class AiChatService {
     graphWithRoute.addNode('portfolio_agent', portfolioAgentNode);
     graphWithRoute.addNode('general_agent', generalAgentNode);
 
-    graphWithRoute.addEdge(START, 'router');
-    graphWithRoute.addConditionalEdges('router', (state) => state.route, {
+    // LangGraph typings over-narrow node names; use cast so we can wire the graph as intended
+    const g = graphWithRoute as {
+      addEdge: (a: string, b: string) => void;
+      addConditionalEdges: (
+        source: string,
+        route: (state: typeof StateWithRoute.State) => string,
+        paths: Record<string, string>
+      ) => void;
+      compile: () => ReturnType<typeof graphWithRoute.compile>;
+    };
+    g.addEdge(START, 'router');
+    g.addConditionalEdges('router', (state) => state.route, {
       portfolio: 'portfolio_agent',
       general: 'general_agent'
     });
-    // LangGraph typings narrow and only allow START as addEdge source; cast to add terminal edges
-    const addTerminalEdge = (src: string) =>
-      (graphWithRoute as { addEdge: (a: string, b: typeof END) => void }).addEdge(
-        src,
-        END
-      );
-    addTerminalEdge('portfolio_agent');
-    addTerminalEdge('general_agent');
+    g.addEdge('portfolio_agent', END);
+    g.addEdge('general_agent', END);
 
-    return graphWithRoute.compile();
+    return g.compile();
   }
 }
