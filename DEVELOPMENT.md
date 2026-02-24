@@ -50,6 +50,47 @@ With the following command you can keep your database schema in sync:
 npm run database:push
 ```
 
+## Deploying to Vercel
+
+Vercel serves only the **static Angular client**. The client calls the API on the same origin (`/api/v1/...`). So you must run the **NestJS API (with PostgreSQL and Redis) elsewhere** and proxy `/api` from Vercel to that backend.
+
+### 1. Run the API and database elsewhere
+
+- Host the API on [Railway](https://railway.app), [Render](https://render.com), [Fly.io](https://fly.io), or a VPS.
+- Provide **PostgreSQL** and **Redis** (see `.env.example` for `DATABASE_URL`, `REDIS_*`, `JWT_SECRET_KEY`, `ACCESS_TOKEN_SALT`).
+- Set **`ROOT_URL`** to your Vercel app URL (e.g. `https://your-app.vercel.app`) so auth redirects (Google, OIDC, etc.) point back to the client.
+- Run `npm run database:migrate` and `npm run database:seed` (or equivalent) for that environment.
+- Note the API base URL (e.g. `https://your-api.railway.app`).
+
+### 2. Proxy `/api` from Vercel to your API
+
+In **`vercel.json`**, add a `rewrites` entry so requests to `/api/*` are sent to your backend. Replace `YOUR_API_BASE_URL` with that URL (no trailing slash):
+
+```json
+{
+  "buildCommand": "npm run build:production",
+  "outputDirectory": "dist/apps/client",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "YOUR_API_BASE_URL/api/:path*" }
+  ]
+}
+```
+
+Example: if your API is at `https://ghostfolio-api.railway.app`, use `"destination": "https://ghostfolio-api.railway.app/api/:path*"`.
+
+### 3. Deploy the client on Vercel
+
+- Connect the repo to Vercel and use the existing **Build Command** and **Output Directory** (or the values in `vercel.json` above).
+- The root URL serves a redirect page (see `apps/client/src/assets/index.html`) that sends users to a locale path (e.g. `/en/`). The app then loads and calls `/api/v1/info` and other endpoints, which Vercel forwards to your API via the rewrite.
+
+### Optional: faster builds
+
+The default `build:production` also builds the API and Storybook. To build only the client on Vercel, set **Build Command** to:
+
+```bash
+nx run client:copy-assets && nx run client:build:production && npm run replace-placeholders-in-build
+```
+
 ## Testing
 
 Run `npm test`
