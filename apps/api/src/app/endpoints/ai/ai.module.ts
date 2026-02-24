@@ -23,12 +23,14 @@ import { SymbolProfileModule } from '@ghostfolio/api/services/symbol-profile/sym
 
 import { Module } from '@nestjs/common';
 
+import { AiChatConversationController } from './ai-chat-conversation.controller';
+import { AiChatConversationService } from './ai-chat-conversation.service';
 import { AiChatService } from './ai-chat.service';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 
 @Module({
-  controllers: [AiController],
+  controllers: [AiChatConversationController, AiController],
   imports: [
     ApiModule,
     BenchmarkModule,
@@ -49,6 +51,7 @@ import { AiService } from './ai.service';
   providers: [
     AccountBalanceService,
     AccountService,
+    AiChatConversationService,
     AiChatService,
     AiService,
     CurrentRateService,
