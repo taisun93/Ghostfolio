@@ -55,6 +55,28 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
     this.errorMessage = null;
   }
 
+  private getErrorMessage(err: unknown): string {
+    if (err && typeof err === 'object') {
+      const e = err as { error?: { message?: string } | string; message?: string; status?: number };
+      if (typeof e.error === 'object' && e.error?.message) {
+        return e.error.message;
+      }
+      if (typeof e.error === 'string' && e.error.trim()) {
+        return e.error.trim();
+      }
+      if (e.message) {
+        return e.message;
+      }
+      if (e.status === 503) {
+        return $localize`Service unavailable. Set OPENAI_API_KEY in your Vercel project environment (or API key in Ghostfolio settings).`;
+      }
+      if (e.status && e.status >= 400) {
+        return $localize`Request failed (${e.status}). Check the API key and try again.`;
+      }
+    }
+    return $localize`Something went wrong. Check that the OpenAI API key is set (Ghostfolio settings or Vercel env OPENAI_API_KEY).`;
+  }
+
   public send() {
     const text = this.inputText?.trim();
     if (!text || this.isThinking) return;
@@ -74,10 +96,7 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
       .post<{ content: string }>('/api/v1/ai/chat', { messages: messagesForApi })
       .pipe(
         catchError((err) => {
-          this.errorMessage =
-            err?.error?.message ||
-            err?.message ||
-            $localize`Something went wrong. Check that the OpenAI API key is set in Ghostfolio settings.`;
+          this.errorMessage = this.getErrorMessage(err);
           return of(null);
         })
       )

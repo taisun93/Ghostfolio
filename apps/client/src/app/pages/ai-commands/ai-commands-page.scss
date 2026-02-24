@@ -57,16 +57,17 @@
   gap: 0.5rem;
   margin-top: 0.75rem;
   padding: 0.75rem 1rem;
-  background: var(--mat-sys-error-container, #ffebee);
-  color: var(--mat-sys-on-error-container, #b71c1c);
+  background: rgba(211, 47, 47, 0.08);
   border-radius: 0.5rem;
-  border: 1px solid var(--mat-sys-error, #c62828);
+  border: 1px solid #c62828;
 }
 
 .ai-chat-error-text {
   flex: 1;
   font-size: 0.875rem;
   line-height: 1.4;
+  color: #b71c1c;
+  font-weight: 500;
 }
 
 .ai-chat-error-dismiss {
