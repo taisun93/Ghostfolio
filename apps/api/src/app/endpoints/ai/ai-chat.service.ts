@@ -207,8 +207,14 @@ export class AiChatService {
       portfolio: 'portfolio_agent',
       general: 'general_agent'
     });
-    graphWithRoute.addEdge('portfolio_agent', END);
-    graphWithRoute.addEdge('general_agent', END);
+    // LangGraph typings narrow and only allow START as addEdge source; cast to add terminal edges
+    const addTerminalEdge = (src: string) =>
+      (graphWithRoute as { addEdge: (a: string, b: typeof END) => void }).addEdge(
+        src,
+        END
+      );
+    addTerminalEdge('portfolio_agent');
+    addTerminalEdge('general_agent');
 
     return graphWithRoute.compile();
   }
