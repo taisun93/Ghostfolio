@@ -5,6 +5,9 @@
   </div>
 
   <div class="ai-chat-messages" #messagesContainer>
+    @if (isLoadingHistory) {
+      <p class="ai-chat-loading" i18n>Loading history…</p>
+    }
     @for (msg of messages; track msg.id) {
       <div class="ai-chat-row" [class.ai-chat-row-user]="msg.role === 'user'" [class.ai-chat-row-assistant]="msg.role === 'assistant'">
         @if (msg.role === 'assistant') {
@@ -38,7 +41,7 @@
         matInput
         [(ngModel)]="inputText"
         (keydown.enter)="$event.preventDefault(); send()"
-        [disabled]="isThinking"
+        [disabled]="isThinking || isLoadingHistory"
         placeholder="e.g. What is my total return?"
       />
     </mat-form-field>
@@ -46,7 +49,7 @@
       class="ai-chat-send"
       mat-flat-button
       color="primary"
-      [disabled]="!inputText?.trim() || isThinking"
+      [disabled]="!inputText?.trim() || isThinking || isLoadingHistory"
       (click)="send()"
       i18n
     >

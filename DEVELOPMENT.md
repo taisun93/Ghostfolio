@@ -83,6 +83,16 @@ Example: if your API is at `https://ghostfolio-api.railway.app`, use `"destinati
 - Connect the repo to Vercel and use the existing **Build Command** and **Output Directory** (or the values in `vercel.json` above).
 - The root URL serves a redirect page (see `apps/client/src/assets/index.html`) that sends users to a locale path (e.g. `/en/`). The app then loads and calls `/api/v1/info` and other endpoints, which Vercel forwards to your API via the rewrite.
 
+### AI chat history (Postgres on Vercel)
+
+When using the stub API (no backend proxy), AI Commands chat history is stored in Postgres. The serverless route `api/v1/ai-chat/messages.ts` uses **Neon** (or any Postgres) via the `@neondatabase/serverless` driver.
+
+1. Create a Postgres database (e.g. [Neon](https://neon.tech) or add **Vercel Postgres** / **Neon** from the [Vercel Marketplace](https://vercel.com/marketplace)).
+2. In the Vercel project, set **Environment Variable** `POSTGRES_URL` or `DATABASE_URL` to your connection string (e.g. `postgresql://user:pass@host/db?sslmode=require`).
+3. The table `ai_chat_messages` is created automatically on first request (user_id, role, content, created_at). No migration needed.
+
+Users are identified by the same Bearer token they use for the stub login; when you switch to a real API, use the real user id from the JWT instead.
+
 ### Optional: faster builds
 
 The default `build:production` also builds the API and Storybook. To build only the client on Vercel, set **Build Command** to:

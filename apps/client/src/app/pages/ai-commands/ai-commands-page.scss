@@ -138,6 +138,12 @@
   }
 }
 
+.ai-chat-loading {
+  color: var(--mat-toolbar-container-text-color, rgba(0, 0, 0, 0.6));
+  font-size: 0.875rem;
+  margin: 1rem 0;
+}
+
 .ai-chat-anchor {
   height: 0;
   overflow: hidden;

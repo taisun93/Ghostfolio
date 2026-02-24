@@ -56,6 +56,7 @@
     "docs:pdf": "node docs/md-to-pdf.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^0.10.0",
     "@angular/animations": "21.1.1",
     "@angular/cdk": "21.1.1",
     "@angular/common": "21.1.1",
