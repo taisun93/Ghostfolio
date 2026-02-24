@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghostfolio</title>
+    <meta http-equiv="refresh" content="0;url=/en/" />
+    <script>
+      (function () {
+        var supported = ['ca', 'de', 'en', 'es', 'fr', 'it', 'ko', 'nl', 'pl', 'pt', 'tr', 'uk', 'zh'];
+        var lang = (navigator.language || navigator.userLanguage || 'en').slice(0, 2).toLowerCase();
+        var target = supported.indexOf(lang) >= 0 ? lang : 'en';
+        location.replace('/' + target + '/');
+      })();
+    </script>
+  </head>
+  <body>
+    <p>Redirecting… <a href="/en/">Continue to Ghostfolio</a></p>
+  </body>
+</html>
