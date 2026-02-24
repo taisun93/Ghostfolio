@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>agent pre search checklist</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; line-height: 1.5; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+    pre { background: #f4f4f4; padding: 1em; overflow-x: auto; }
+    pre code { padding: 0; background: none; }
+    @media print { body { max-width: none; } }
+  </style>
+</head>
+<body>
+<h1>Agent Pre-Search Checklist</h1>
+<p><strong>Project:</strong> Ghostfolio – AI agent for portfolio/investment domain<br><strong>Framework:</strong> LangGraph (multi-agent)<br><strong>Reference:</strong> AI conversation that led to this document.</p>
+<hr>
+<h2>Phase 1: Define Your Constraints</h2>
+<h3>1. Domain Selection</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Which domain</strong></td>
+<td>Finance (portfolio / investment tracking).</td>
+</tr>
+<tr>
+<td><strong>Specific use cases</strong></td>
+<td>• <code>portfolio_analysis(account_id)</code> → holdings, allocation, performance<br>• <code>transaction_categorize(transactions[])</code> → categories, patterns<br>• <code>tax_estimate(income, deductions)</code> → estimated liability<br>• <code>compliance_check(transaction, regulations[])</code> → violations, warnings<br>• <code>market_data(symbols[], metrics[])</code> → current data</td>
+</tr>
+<tr>
+<td><strong>Verification requirements</strong></td>
+<td>• Domain-specific checks before returning responses (allocation sums, no invalid negatives, allowed symbols/currencies, compliance rules, tax consistency).<br>• Human-in-the-loop for any action that moves money (see §3).</td>
+</tr>
+<tr>
+<td><strong>Data sources</strong></td>
+<td><strong>Existing (use as-is):</strong> DataProviderService (quotes, historical, dividends, asset profile, search), ExchangeRateDataService, PortfolioService, OrderService, MarketDataService. <strong>Gaps to address:</strong> live fundamentals (P/E, etc.), news, compliance/regulatory lists, tax rates/rules, transaction categorization taxonomy (rules or external API).</td>
+</tr>
+</tbody></table>
+<h3>2. Scale &amp; Performance</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Expected query volume</strong></td>
+<td>Expressed <strong>per user</strong>: e.g. queries per user per day (or per month). Design limits and capacity from “N users × Q queries/user/day” rather than raw RPS only. <strong>Rate limit:</strong> throttle “LLM whales” (users who burn disproportionate LLM quota) unless they’re on a top-tier / higher-paying plan that grants higher limits. Define tiers (e.g. free/Basic: X queries/day; Premium: Y; enterprise/custom: Z or unlimited).</td>
+</tr>
+<tr>
+<td><strong>Acceptable latency</strong></td>
+<td><strong>On par with industry standards for AI apps:</strong> time-to-first-token (TTFT) &lt;~2s for perceived responsiveness; full response latency depends on tool round-trips (multi-step agent flows will be longer—give clear feedback, e.g. “Checking portfolio…”). Target sub-2s TTFT for simple answers; acceptable longer for multi-tool flows if the UI shows progress.</td>
+</tr>
+<tr>
+<td><strong>Concurrent user requirements</strong></td>
+<td><strong>Horizontal scaling:</strong> the app scales horizontally; add more instances as load grows. No single-node bottleneck by design—spin up more instances to handle concurrent users.</td>
+</tr>
+<tr>
+<td><strong>Cost constraints for LLM calls</strong></td>
+<td>Managed via <strong>per-user rate limits</strong> (see query volume). High-tier or paying users get higher limits; default tier keeps abuse in check. Track cost per user/session for visibility and tier tuning.</td>
+</tr>
+</tbody></table>
+<p><strong>Benchmark notes (non-AI apps; proxy for usage scale and infra):</strong></p>
+<ul>
+<li><strong>Robinhood (retail investing):</strong> ~27M funded customers (2025). Brokerage at 100k→750k→2M+ req/s peak. MAU ~12.5M (2022). Use to size “total platform”; agent traffic is a fraction (per-user query caps keep peak RPS predictable).</li>
+<li><strong>Monarch Money (personal finance):</strong> ~$30M ARR (2024), strong growth. Smaller scale than Robinhood; good “serious but not massive” benchmark for per-user and total load.</li>
+<li><strong>Plaid (finance API):</strong> 300+ req/s sustained; P95 &lt;2s; 99.5–99.9% uptime—align agent endpoint with similar SLA where possible.</li>
+<li><strong>AI latency (industry):</strong> 2024 norms: sub-1s for “instant” chat; ~2s TTFT as psychological threshold; full agent response longer when tools are involved—streaming and progress cues matter.</li>
+</ul>
+<h3>3. Reliability Requirements</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cost of a wrong answer?</td>
+<td>High in finance (incorrect allocation/tax/compliance can have real impact). Assumption: treat as high-severity domain.</td>
+</tr>
+<tr>
+<td>Non-negotiable verification?</td>
+<td>(1) Domain-specific verification layer before returning answers. (2) Human approval before any money-moving action.</td>
+</tr>
+<tr>
+<td>Human-in-the-loop requirements?</td>
+<td><strong>Required</strong> for anything that actually moves money (e.g. execute_trade). Single approval point on the action agent’s execute path.</td>
+</tr>
+<tr>
+<td>Audit/compliance needs?</td>
+<td>Conversation history persisted (Postgres); relational storage supports queryable, auditable history. <strong>To research:</strong> what data must be retained for audits (e.g. thread id, user id, message role/content, tool calls/results, timestamps, approval events, model version); retention period; regulatory expectations by jurisdiction.</td>
+</tr>
+</tbody></table>
+<h3>4. Team &amp; Skill Constraints</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Familiarity with agent frameworks?</td>
+<td>Some prior experimentation with LangChain; chose LangGraph for explicit flow and state.</td>
+</tr>
+<tr>
+<td>Experience with domain?</td>
+<td>Working in Ghostfolio codebase (portfolio, orders, market data, data providers).</td>
+</tr>
+<tr>
+<td>Comfort with eval/testing frameworks?</td>
+<td>Current stack (Jest + Nx + NestJS testing) considered sufficient for unit/integration tests; no additional test framework planned for agent work.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Phase 2: Architecture Discovery</h2>
+<h3>5. Agent Framework Selection</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>LangChain vs LangGraph vs CrewAI vs custom?</td>
+<td><strong>LangGraph.</strong></td>
+</tr>
+<tr>
+<td>Single vs multi-agent?</td>
+<td><strong>Multi-agent.</strong> Specialist agents compile info (portfolio, market, compliance, tax) and pass <strong>summaries</strong> to an action agent; saves context and gives a clear place for human verification.</td>
+</tr>
+<tr>
+<td>State management?</td>
+<td><strong>Postgres (relational)</strong> for conversation history (threads + messages). <strong>Redis</strong> already in stack for cache; optional for hot/checkpoint state.</td>
+</tr>
+<tr>
+<td>Tool integration complexity?</td>
+<td>Five tools with schema + execute; LangGraph tool node runs them. Existing app services (DataProvider, Portfolio, etc.) used inside tool <code>execute</code>.</td>
+</tr>
+</tbody></table>
+<h3>6. LLM Selection</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GPT-5 vs Claude vs open source?</td>
+<td><strong>Lock in GPT-5</strong> (via OpenRouter or direct). Single default model for reliability and fewer failure points (e.g. avoiding churn from providers changing APIs).</td>
+</tr>
+<tr>
+<td>Function calling support?</td>
+<td>Required; LangGraph + tool-calling loop depend on it.</td>
+</tr>
+<tr>
+<td>Context window needs?</td>
+<td>Multi-agent design keeps action-agent context smaller (summaries only). Set to model’s native window; no extra constraint.</td>
+</tr>
+<tr>
+<td>Cost per query acceptable?</td>
+<td>Tracked and optimized; see §8 (observability). Latency and cost are foremost; use hosted tooling to monitor.</td>
+</tr>
+</tbody></table>
+<h3>7. Tool Design</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Tools needed?</td>
+<td><code>portfolio_analysis</code>, <code>transaction_categorize</code>, <code>tax_estimate</code>, <code>compliance_check</code>, <code>market_data</code> (at least 3 functional for MVP; all five planned).</td>
+</tr>
+<tr>
+<td>External API dependencies?</td>
+<td>Existing data providers (Yahoo, Alpha Vantage, etc.) for market/portfolio. Possible new: fundamentals, news, compliance lists, tax data (TBD).</td>
+</tr>
+<tr>
+<td>Mock vs real for development?</td>
+<td>Use existing services; mock in Jest for unit tests. TBD: dedicated mock data sets for agent eval if needed.</td>
+</tr>
+<tr>
+<td>Error handling per tool?</td>
+<td>Wrap each tool <code>execute</code> in try/catch; return structured error (e.g. <code>{ error: true, message }</code>) into state so the model can respond gracefully; no unhandled crashes.</td>
+</tr>
+</tbody></table>
+<h3>8. Observability Strategy</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>LangSmith vs Braintrust vs other?</td>
+<td><strong>Hosted where possible</strong>—“stand on the shoulders of giants.” Use a hosted observability/tracing product (e.g. LangSmith, Braintrust, Helicone) for traces, logs, and cost.</td>
+</tr>
+<tr>
+<td>Metrics that matter most?</td>
+<td><strong>Latency and cost are foremost.</strong> Then: tool success rate, human override rate, error rate.</td>
+</tr>
+<tr>
+<td>Real-time monitoring needs?</td>
+<td>Use hosted solution for real-time dashboards and alerts (latency, errors, cost spikes).</td>
+</tr>
+<tr>
+<td>Cost tracking requirements?</td>
+<td>Track cost per query/session/user; required for rate limits and tier tuning. Hosted tooling preferred.</td>
+</tr>
+</tbody></table>
+<h3>9. Eval Approach</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>How to measure correctness?</td>
+<td><strong>Golden test cases</strong> with obvious, common-sense expected responses. Automated checks (output shape, domain checks). Failures on these cases → <strong>flag for human review.</strong></td>
+</tr>
+<tr>
+<td>Ground truth data sources?</td>
+<td>A <strong>small set of test cases</strong> with known-good answers (common-sense responses). Expand over time (portfolio snapshots, hand-labeled categories, tax/compliance outcomes as needed).</td>
+</tr>
+<tr>
+<td>Automated vs human evaluation?</td>
+<td>Automated: run golden set in CI; failures trigger human review. Jest for unit/integration; human review for flagged agent outputs.</td>
+</tr>
+<tr>
+<td>CI integration for eval runs?</td>
+<td>Yes. Run golden test cases in CI; failures block or alert and route to human review.</td>
+</tr>
+</tbody></table>
+<h3>10. Verification Design</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Claims that must be verified?</td>
+<td>Numeric consistency (allocations, totals), no invalid negatives, symbol/currency validity, compliance rules, tax math consistency.</td>
+</tr>
+<tr>
+<td>Fact-checking data sources?</td>
+<td>App’s own data (portfolio, orders, market data); compliance/tax from rules or external sources TBD.</td>
+</tr>
+<tr>
+<td>Confidence thresholds?</td>
+<td>When confidence is <strong>too low</strong>: <strong>withhold</strong> and direct user to a trusted human advisor (e.g. “I’m not sure—for this kind of question, please consult a trusted human advisor”). No guess when uncertain.</td>
+</tr>
+<tr>
+<td>Escalation triggers?</td>
+<td>Low confidence → “find a trusted human advisor for this.” Tool failure, verification failure, or human-required step (e.g. money-moving) → clear message + escalation path. Log these for audit and product review.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Phase 3: Post-Stack Refinement</h2>
+<h3>11. Failure Mode Analysis</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>When tools fail?</td>
+<td>Return structured error into state; agent can explain or retry. No crash.</td>
+</tr>
+<tr>
+<td>Ambiguous queries?</td>
+<td>TBD: choose clarify (ask user) vs best-effort answer with caveat; document in runbook.</td>
+</tr>
+<tr>
+<td>Rate limiting and fallbacks?</td>
+<td>Per-user rate limits (tiered); TBD: provider rate limits (backoff/queue) and fallback data sources or cached responses.</td>
+</tr>
+<tr>
+<td>Graceful degradation?</td>
+<td>TBD: e.g. respond without a failed tool’s data and state the gap (“I couldn’t fetch X; here’s what I have…”).</td>
+</tr>
+</tbody></table>
+<h3>12. Security Considerations</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Prompt injection prevention?</td>
+<td>TBD: e.g. input sanitization, prompt structure, output validation; define before launch.</td>
+</tr>
+<tr>
+<td>Data leakage risks?</td>
+<td>Strict user/tenant isolation: state and context scoped to user/session only. TBD: audit for cross-tenant edge cases.</td>
+</tr>
+<tr>
+<td>API key management?</td>
+<td>Existing: OpenRouter (and others) via PropertyService. Agent tools use same pattern. TBD: any new keys for new data sources (store in PropertyService or env).</td>
+</tr>
+<tr>
+<td>Audit logging requirements?</td>
+<td>Conversation history in Postgres supports audit. TBD: exactly what to log (e.g. tool calls, approvals, model version) and retention; align with audit research in §3.</td>
+</tr>
+</tbody></table>
+<h3>13. Testing Strategy</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Unit tests for tools?</td>
+<td>Yes; Jest, mock dependencies (DB, Redis, data providers), assert on tool output shape and error paths.</td>
+</tr>
+<tr>
+<td>Integration tests for agent flows?</td>
+<td>Yes; NestJS testing module, mock LLM/checkpoint, test graph state and tool invocation. Optional: supertest for HTTP agent endpoint.</td>
+</tr>
+<tr>
+<td>Adversarial testing?</td>
+<td>TBD: e.g. prompt injection and jailbreak-style tests; add if security review requires it.</td>
+</tr>
+<tr>
+<td>Regression testing?</td>
+<td>Jest in CI. TBD: add eval/regression suite for agent outputs (golden set covers baseline).</td>
+</tr>
+</tbody></table>
+<h3>14. Open Source Planning</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>What will you release?</td>
+<td>TBD: e.g. agent + tools only, or full LangGraph integration; scope of docs and examples.</td>
+</tr>
+<tr>
+<td>Licensing?</td>
+<td>Ghostfolio is AGPL-3.0; TBD: how agent code is licensed and whether new dependencies affect that.</td>
+</tr>
+<tr>
+<td>Documentation requirements?</td>
+<td>TBD: minimal (README + checklist) vs full (architecture, runbooks, API).</td>
+</tr>
+<tr>
+<td>Community engagement plan?</td>
+<td>TBD: if/when to announce, issue templates, contribution guidelines.</td>
+</tr>
+</tbody></table>
+<h3>15. Deployment &amp; Operations</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Hosting approach?</td>
+<td>TBD: same as existing API (single deploy) unless scale or isolation demands a separate agent service.</td>
+</tr>
+<tr>
+<td>CI/CD for agent updates?</td>
+<td>TBD: same pipeline as app by default; separate only if release cadence differs.</td>
+</tr>
+<tr>
+<td>Monitoring and alerting?</td>
+<td>Hosted observability (§8) for latency, errors, cost; TBD: alert thresholds and on-call runbook.</td>
+</tr>
+<tr>
+<td>Rollback strategy?</td>
+<td>TBD: e.g. feature flag or versioned agent config; same as app rollback if single deploy.</td>
+</tr>
+</tbody></table>
+<h3>16. Iteration Planning</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>How to collect user feedback?</td>
+<td>TBD: in-app (thumbs, “Report”) and/or support channels; log with thread id for review.</td>
+</tr>
+<tr>
+<td>Eval-driven improvement cycle?</td>
+<td>TBD: e.g. weekly run of golden set, review flagged failures, prioritize fixes and new cases.</td>
+</tr>
+<tr>
+<td>Feature prioritization?</td>
+<td>TBD: align with product roadmap; agent capabilities follow tool and data source readiness.</td>
+</tr>
+<tr>
+<td>Long-term maintenance plan?</td>
+<td>TBD: owner, dependency upgrades (LangGraph, SDK, GPT-5 API), and eval regression as part of release process.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Summary</h2>
+<p><strong>Decided:</strong> Domain (finance), five tools, LangGraph, multi-agent, Postgres state, GPT-5, hosted observability (latency + cost first), golden-set eval with human review on failure, low-confidence → “find a trusted human advisor,” Jest testing, rate limits and horizontal scaling.</p>
+<p><strong>TBD / To research:</strong> Audit data and retention (§3, §12), ambiguous-query handling, provider rate limits and fallbacks, graceful degradation, prompt injection and data-leak controls, adversarial/regression testing, open source scope and licensing, deployment and CI/CD details, feedback and iteration process.</p>
+<hr>
+<h2>Chat History (reconstructed)</h2>
+<p><strong>User:</strong> Ignoring the Readme, what do you think this repo is trying to accomplish?</p>
+<p><strong>Assistant:</strong> [Explored codebase: package.json, prisma schema, API structure, portfolio/order/import controllers.] Summarized: self-hosted personal investment and portfolio tracker—accounts, orders (activities), symbol profiles, market data; portfolio analytics (holdings, performance, dividends, reports); import/export; multi-user and sharing; subscription; watchlist, tags, benchmarks; auth (JWT, OAuth, OIDC, WebAuthn); data providers (e.g. Yahoo Finance). Stack: NestJS API, Angular client, Prisma/Postgres, Nx monorepo.</p>
+<hr>
+<p><strong>User:</strong> Anything wired to the AI endpoint yet?</p>
+<p><strong>Assistant:</strong> [Checked AI controller, service, client.] Wired: GET /api/v1/ai/prompt/:mode builds prompt (portfolio table or analysis template) and returns it; Analysis page calls it and copies prompt to clipboard with “Open Duck.ai” nudge. Not wired: AiService.generateText() (OpenRouter + AI SDK) exists but is never called—no in-app LLM call.</p>
+<hr>
+<p><strong>User:</strong> I see so the code base currently reads in AI prompts but doesn&#39;t process or actually call any agents?</p>
+<p><strong>Assistant:</strong> Clarified: app <em>generates</em> prompts (from portfolio data), doesn’t “read in” prompts. No agent/LLM is called in the normal flow; only use is copy-to-clipboard for external sites. generateText() is dead code.</p>
+<hr>
+<p><strong>User:</strong> Then lets do a pro con for langchain and langgraph</p>
+<p><strong>Assistant:</strong> [Provided pro/con tables for LangChain vs LangGraph: ecosystem vs complexity, explicit flow/state, when each fits. Recommendation: LangGraph for flow/state/human-in-loop; LangChain for chains+tools+RAG.]</p>
+<hr>
+<p><strong>User:</strong> I was thinking things like Langchain. Maybe something else since I&#39;ve already experimented with that once</p>
+<p><strong>Assistant:</strong> [Outlined options: double down on Vercel AI SDK (already in repo), LangGraph, CrewAI, hand-rolled. Recommendation: AI SDK for “one agent + tools” or LangGraph for explicit graphs; CrewAI for multi-agent crews.]</p>
+<hr>
+<p><strong>User:</strong> these are 5 tools that need to be implemented. Do you think this rules out any frameworks or hand rolling?
+portfolio_analysis(account_id) → holdings, allocation, performance
+transaction_categorize(transactions[]) → categories, patterns
+tax_estimate(income, deductions) → estimated liability
+compliance_check(transaction, regulations[]) → violations, warnings
+market_data(symbols[], metrics[]) → current data</p>
+<p><strong>Assistant:</strong> No. Fits single agent + tools (AI SDK or hand-rolled). LangGraph optional for explicit flow. CrewAI poor fit (multi-agent delegation). Not ruled out: AI SDK, hand-roll, LangGraph.</p>
+<hr>
+<p><strong>User:</strong> Alright langgraph it is. I&#39;m told &quot;Conversation history maintained across turns&quot; is thee anything currently in the architecture that can support this or should I add redis/a relational db?</p>
+<p><strong>Assistant:</strong> [Checked Redis/cache and Prisma schema.] Nothing currently stores conversation/chat. Redis already in stack (cache, portfolio snapshots). No conversation models in Postgres. Recommendation: Redis for thread state (existing infra) or add Postgres tables (AgentThread, AgentMessage) for durable queryable history; add relational when you need audit/list threads.</p>
+<hr>
+<p><strong>User:</strong> relational or nosql? I&#39;ve been told that if you don&#39;t need to order or count you should do nosql</p>
+<p><strong>Assistant:</strong> You do need order (message sequence) and count (messages per thread, threads per user). That heuristic points to relational. Recommendation: Postgres for threads/messages; Redis optional for hot state.</p>
+<hr>
+<p><strong>User:</strong> Agent Components [Reasoning Engine, Tool Registry, Memory, Orchestrator, Verification Layer, Output Formatter] — I need to have these components. Would that necessitate the extra complexity of langgraph?</p>
+<p><strong>Assistant:</strong> No. All six can be implemented with a simpler stack (e.g. Vercel AI SDK): reasoning = LLM + prompt; tool registry = tools object; memory = message array + DB; orchestrator = tool loop with maxSteps; verification = post-loop check; output = structured output. LangGraph worth it when you want explicit graph, state persistence, or human-in-loop branching.</p>
+<hr>
+<p><strong>User:</strong> Tool calls execute successfully and return structured results; Agent synthesizes tool results into coherent responses; Basic error handling — this is all part of just general functionality for a tool right? Shouldn&#39;t be too hard to configure in langgraph I suppose.</p>
+<p><strong>Assistant:</strong> Yes. Standard tool-calling loop; LangGraph handles it. Wrap tool execute in try/catch, return structured error into state; model can explain or retry.</p>
+<hr>
+<p><strong>User:</strong> Then lets do a pro con for langchain and langgraph</p>
+<p><strong>Assistant:</strong> [Already provided earlier in conversation.]</p>
+<hr>
+<p><strong>User:</strong> what&#39;s a domain-specific verification check</p>
+<p><strong>Assistant:</strong> A check you run <em>after</em> the agent answers, using <em>your domain’s</em> rules (finance, compliance, tax), not generic code. Examples: allocation percentages sum to 100%; no invalid negatives; symbol/currency validity; compliance rules; tax math consistency. Verification layer = run these before returning the response.</p>
+<hr>
+<p><strong>User:</strong> I&#39;d probably need tools to access datasources for some of these functions. Are there some common use cases that the app doesn&#39;t support?</p>
+<p><strong>Assistant:</strong> [Checked DataProvider interface and usage.] Supported: quotes, historical, dividends, asset profile, search, sectors/countries (enhancers), FX. Not supported: live fundamentals (P/E, etc.), news, compliance/regulatory lists, tax rates/rules, transaction categorization taxonomy. Tools can use existing services for portfolio_analysis and market_data; add sources or internal data for the rest.</p>
+<hr>
+<p><strong>User:</strong> I&#39;d probably need human verification for anything that actually moves money. single or multiagent? I suppose having agents be individually available to compile info for other agents could save on context.</p>
+<p><strong>Assistant:</strong> Human verification: same in single or multi-agent—gate execution (tool needsApproval or graph node “human_review” before execute). Multi-agent: specialists (research, compliance) compile summaries; action agent gets summaries only → smaller context; single approval point on action agent. Recommendation: multi-agent for context saving; human verification on the path that moves money.</p>
+<hr>
+<p><strong>User:</strong> Based on what we discussed create a document that addresses this checklist. If there&#39;s anything we haven&#39;t addressed ask me questions.</p>
+<p><strong>Assistant:</strong> [Created docs/agent-pre-search-checklist.md with full Pre-Search Checklist, filled from discussion, and listed 11 open questions at end.]</p>
+<hr>
+<p><strong>User:</strong> I&#39;ll have to research more about what data needs to be maintained for audits. Is there any current estimates for how much like robinhood or monarch does for the scale/performance stuff? They dont&#39; have AI but could be a metric for usage</p>
+<p><strong>Assistant:</strong> [Web search: Robinhood ~27M funded, 100k→2M+ req/s; Monarch ~$30M ARR, growth; Plaid 300+ req/s, P95 &lt;2s.] Updated checklist: benchmark notes (Robinhood, Monarch, Plaid, AI latency); audit = “To research” (what to retain, retention, jurisdiction).</p>
+<hr>
+<p><strong>User:</strong> Latency... should be on par with industry standards for AI apps. query volume should be expressed in terms of per user. Probably rate limit people if they&#39;re an LLM whale unless they&#39;re paying top dollar. Concurrent user... I mean this is an app that&#39;ll scale horizontally well so just spin up more instances. Add all that and address pt 2</p>
+<p><strong>Assistant:</strong> [Updated §2: latency = industry standard for AI (TTFT &lt;~2s); query volume per user + rate limit whales unless top tier; concurrent = horizontal scaling; cost via rate limits and tracking.]</p>
+<hr>
+<p><strong>User:</strong> Alright lets run down the rest of the open stuff. Like 4 &quot;opens&quot; at a time ask me questions until we nail the rest of the document</p>
+<p><strong>Assistant:</strong> [Asked Batch 1: (1) LLM—single default or configurable? context/cost? (2) Observability—hosted vs in-house? 2–3 key metrics? (3) Eval—automated only or human review? ground truth? (4) Verification—withhold vs best-effort vs escalate? escalation UX?]</p>
+<hr>
+<p><strong>User:</strong> Lets lock in GPT 5. For building a reliable product and having less failure pts. (like companies chaging their API). Lets use hosted where possible to stand on the shoulders of giants. Latency and cost are key questions so those are foremost. For eval I&#39;ll have a few test cases with obvious common sense responses. If the model fails those that would be a flag for human review. For verification, when confidence gets too low have it be like &quot;not sure find a trusted human advisor for this complex shit&quot;</p>
+<p><strong>Assistant:</strong> [Updated checklist §6 (GPT-5, reliability), §8 (hosted observability, latency+cost first), §9 (golden test cases, failures→human review, CI), §10 (low confidence→withhold, “find trusted human advisor”), and Summary.]</p>
+<hr>
+<p><strong>User:</strong> I&#39;ll have to research more about what data needs to be maintained for audits. Is there any current estimates for how much like robinhood or monarch does for the scale/performance stuff?</p>
+<p><strong>Assistant:</strong> [Same as earlier: added benchmark notes and audit research note to doc.]</p>
+<hr>
+<p><strong>User:</strong> alright clear this up</p>
+<p><strong>Assistant:</strong> [Condensed doc to ~80 lines: single “Decided” bullet list, short “TBD” list, condensed reference. Removed tables and long phase sections.]</p>
+<hr>
+<p><strong>User:</strong> undo that last update. I want the og format but with the open spots filled</p>
+<p><strong>Assistant:</strong> [Restored full Phase 1–3 checklist with all 16 section tables; filled every previously open cell with decided answers or explicit TBD + short note. Kept Summary.]</p>
+<hr>
+<p><strong>User:</strong> paste the exact entire history of this chat to the end of that markdown file</p>
+<p><strong>Assistant:</strong> [Appended this reconstructed chat history. Note: exact transcript not available; this is a reconstruction from context.]</p>
+
+</body>
+</html>
