@@ -14,7 +14,7 @@ import { RouterModule } from '@angular/router';
   templateUrl: './dashboard-page.html'
 })
 export class GfDashboardPageComponent {
-  public routerLinkHome = internalRoutes.home.routerLink;
+  public routerLinkOverview = internalRoutes.home.routerLink;
 
   public netWorth = 284_750;
   public allocation = [

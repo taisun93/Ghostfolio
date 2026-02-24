@@ -33,6 +33,11 @@ export const internalRoutes: Record<string, InternalRoute> = {
     },
     title: $localize`Settings`
   },
+  aiCommands: {
+    path: 'ai-commands',
+    routerLink: ['/ai-commands'],
+    title: $localize`AI Commands`
+  },
   adminControl: {
     excludeFromAssistant: (aUser: User) => {
       return hasPermission(aUser?.permissions, permissions.accessAdminControl);
@@ -80,15 +85,15 @@ export const internalRoutes: Record<string, InternalRoute> = {
     routerLink: ['/auth'],
     title: $localize`Sign in`
   },
-  dashboard: {
-    path: 'dashboard',
-    routerLink: ['/dashboard'],
-    title: $localize`Dashboard`
-  },
   home: {
     path: 'home',
     routerLink: ['/home'],
     subRoutes: {
+      dashboard: {
+        path: 'dashboard',
+        routerLink: ['/home', 'dashboard'],
+        title: $localize`Dashboard`
+      },
       holdings: {
         path: 'holdings',
         routerLink: ['/home', 'holdings'],

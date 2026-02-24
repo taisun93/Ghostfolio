@@ -19,6 +19,7 @@ import {
   albumsOutline,
   analyticsOutline,
   bookmarkOutline,
+  gridOutline,
   newspaperOutline,
   readerOutline
 } from 'ionicons/icons';
@@ -55,6 +56,11 @@ export class GfHomePageComponent implements OnDestroy, OnInit {
           this.user = state.user;
 
           this.tabs = [
+            {
+              iconName: 'grid-outline',
+              label: internalRoutes.home.subRoutes.dashboard.title,
+              routerLink: internalRoutes.home.subRoutes.dashboard.routerLink
+            },
             {
               iconName: 'analytics-outline',
               label: internalRoutes.home.title,
@@ -100,6 +106,7 @@ export class GfHomePageComponent implements OnDestroy, OnInit {
       albumsOutline,
       analyticsOutline,
       bookmarkOutline,
+      gridOutline,
       newspaperOutline,
       readerOutline
     });

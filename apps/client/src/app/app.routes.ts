@@ -45,11 +45,11 @@ export const routes: Routes = [
   {
     canActivate: [AuthGuard],
     loadComponent: () =>
-      import('./pages/dashboard/dashboard-page.component').then(
-        (c) => c.GfDashboardPageComponent
+      import('./pages/ai-commands/ai-commands-page.component').then(
+        (c) => c.GfAiCommandsPageComponent
       ),
-    path: internalRoutes.dashboard.path,
-    title: internalRoutes.dashboard.title
+    path: internalRoutes.aiCommands.path,
+    title: internalRoutes.aiCommands.title
   },
   {
     path: publicRoutes.blog.path,

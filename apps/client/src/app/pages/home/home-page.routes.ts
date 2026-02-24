@@ -9,6 +9,7 @@ import { internalRoutes } from '@ghostfolio/common/routes/routes';
 
 import { Routes } from '@angular/router';
 
+import { GfDashboardPageComponent } from '../dashboard/dashboard-page.component';
 import { GfHomePageComponent } from './home-page.component';
 
 export const routes: Routes = [
@@ -18,6 +19,11 @@ export const routes: Routes = [
       {
         path: '',
         component: GfHomeOverviewComponent
+      },
+      {
+        path: internalRoutes.home.subRoutes.dashboard.path,
+        component: GfDashboardPageComponent,
+        title: internalRoutes.home.subRoutes.dashboard.title
       },
       {
         path: internalRoutes.home.subRoutes.holdings.path,
