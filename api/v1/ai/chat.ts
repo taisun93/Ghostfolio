@@ -3,7 +3,7 @@
  * Body: { messages: { role: 'user'|'assistant', content: string }[] }
  * Returns: { content: string }
  * Requires Bearer token in Authorization (passed through; optional validation).
- * Set OPENAI_API_KEY in Vercel env.
+ * Set OPENAI_API_KEY or API_KEY_OPENAI in Vercel env.
  */
 export const config = { runtime: 'edge' };
 
@@ -32,12 +32,16 @@ export async function POST(req: Request) {
     });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  // Prefer OPENAI_API_KEY (Vercel convention); fallback to API_KEY_OPENAI (Ghostfolio property name)
+  const apiKey = (
+    process.env.OPENAI_API_KEY ??
+    process.env.API_KEY_OPENAI
+  )?.trim();
   if (!apiKey) {
     return new Response(
       JSON.stringify({
         message:
-          'AI chat is not configured. Set OPENAI_API_KEY in the project environment.'
+          'AI chat is not configured. Set OPENAI_API_KEY or API_KEY_OPENAI in the project environment.'
       }),
       { status: 503, headers: { 'Content-Type': 'application/json' } }
     );

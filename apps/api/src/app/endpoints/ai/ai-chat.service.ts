@@ -73,9 +73,18 @@ export class AiChatService {
       messages: langchainMessages,
       portfolioContext: portfolioContext ?? undefined
     };
-    const result = await graph.invoke(
-      input as Parameters<typeof graph.invoke>[0]
-    );
+    let result: { messages: BaseMessage[] };
+    try {
+      result = await graph.invoke(
+        input as Parameters<typeof graph.invoke>[0]
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'OpenAI request failed';
+      throw new Error(
+        `AI chat (LangGraph/OpenAI) failed: ${message}. Check API_KEY_OPENAI in Ghostfolio settings and network access to api.openai.com.`
+      );
+    }
 
     const lastMessage = result.messages[result.messages.length - 1];
     const content =
