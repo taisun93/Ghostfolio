@@ -6,20 +6,12 @@ import { Filter } from '@ghostfolio/common/interfaces';
 import { Injectable } from '@nestjs/common';
 import type { BaseMessage } from '@langchain/core/messages';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
-import {
-  Annotation,
-  END,
-  messagesStateReducer,
-  StateGraph,
-  START
-} from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 
-const ROUTER_SYSTEM = `You are a router. Given the user message and whether portfolio data is available, reply with exactly one word: "portfolio" if the user is asking about their holdings, allocation, investments, or portfolio; otherwise reply "general".`;
-
-const PORTFOLIO_SYSTEM_PREFIX = `You are a helpful, neutral financial portfolio assistant. Answer only based on the portfolio data provided. Be concise and clear. Base currency is provided.`;
-
-const GENERAL_SYSTEM = `You are a helpful assistant for Ghostfolio, a personal finance and portfolio tracking app. Answer general questions briefly. If the user asks about portfolio-specific data, suggest they ask about "my portfolio" in this chat.`;
+/** Single-prompt system: no router, one LLM call per turn for lower latency. */
+const COMBINED_SYSTEM_PREFIX = `You are a helpful assistant for Ghostfolio, a personal finance and portfolio tracking app.
+- If portfolio data is provided below, use it only when the user asks about their holdings, allocation, or investments; be concise and neutral.
+- For other questions, answer briefly. If they ask for portfolio-specific data but none is provided, say so and suggest they add holdings.`;
 
 export interface ChatMessageInput {
   role: 'user' | 'assistant';
@@ -68,30 +60,32 @@ export class AiChatService {
       return { content: 'Please send a message.' };
     }
 
-    const graph = this.buildGraph(openAiKey);
-    const input = {
-      messages: langchainMessages,
-      portfolioContext: portfolioContext ?? undefined
-    };
-    let result: { messages: BaseMessage[] };
+    const model = new ChatOpenAI({
+      apiKey: openAiKey,
+      model: 'gpt-4o-mini',
+      temperature: 0.2
+    });
+    const systemContent = portfolioContext?.trim()
+      ? `${COMBINED_SYSTEM_PREFIX}\n\nPortfolio (use only for allocation/holdings questions):\n${portfolioContext}`
+      : `${COMBINED_SYSTEM_PREFIX}\n\nNo portfolio data available.`;
+    const prompt: BaseMessage[] = [
+      new SystemMessage(systemContent),
+      ...langchainMessages
+    ];
+
+    let response: Awaited<ReturnType<ChatOpenAI['invoke']>>;
     try {
-      result = await graph.invoke(
-        input as Parameters<typeof graph.invoke>[0]
-      );
+      response = await model.invoke(prompt);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'OpenAI request failed';
       throw new Error(
-        `AI chat (LangGraph/OpenAI) failed: ${message}. Check API_KEY_OPENAI in Ghostfolio settings and network access to api.openai.com.`
+        `AI chat (OpenAI) failed: ${message}. Check API_KEY_OPENAI in Ghostfolio settings and network access to api.openai.com.`
       );
     }
 
-    const lastMessage = result.messages[result.messages.length - 1];
     const content =
-      lastMessage && typeof lastMessage.content === 'string'
-        ? lastMessage.content
-        : '';
-
+      typeof response.content === 'string' ? response.content : '';
     return { content };
   }
 
@@ -131,106 +125,5 @@ export class AiChatService {
         ? new HumanMessage(m.content)
         : new AIMessage(m.content)
     );
-  }
-
-  private buildGraph(apiKey: string) {
-    const model = new ChatOpenAI({
-      apiKey,
-      model: 'gpt-4o-mini',
-      temperature: 0.2
-    });
-
-    const StateWithRoute = Annotation.Root({
-      messages: Annotation<BaseMessage[]>({
-        reducer: messagesStateReducer,
-        default: () => []
-      }),
-      portfolioContext: Annotation<string | undefined>({
-        value: (
-          left: string | undefined,
-          right: string | undefined
-        ): string | undefined =>
-          right !== undefined ? right : left,
-        default: () => undefined
-      }),
-      route: Annotation<string>({
-        value: (left: string, right: string): string =>
-          right !== undefined && right !== '' ? right : left,
-        default: () => 'general'
-      })
-    });
-
-    const graphWithRoute = new StateGraph(StateWithRoute);
-
-    const routerNodeWithRoute = async (
-      state: typeof StateWithRoute.State
-    ): Promise<Partial<typeof StateWithRoute.State>> => {
-      const lastMsg = state.messages[state.messages.length - 1];
-      const content =
-        lastMsg && typeof lastMsg.content === 'string'
-          ? lastMsg.content
-          : '';
-      const hasPortfolio = !!state.portfolioContext?.trim();
-      const routerPrompt = hasPortfolio
-        ? `User message: "${content.slice(0, 500)}"\nPortfolio available: yes.\nReply with exactly: portfolio or general`
-        : `User message: "${content.slice(0, 500)}"\nPortfolio available: no.\nReply with exactly: portfolio or general`;
-      const response = await model.invoke([
-        new SystemMessage(ROUTER_SYSTEM),
-        new HumanMessage(routerPrompt)
-      ]);
-      const decision =
-        typeof response.content === 'string'
-          ? response.content.trim().toLowerCase()
-          : '';
-      const route = decision.startsWith('portfolio') ? 'portfolio' : 'general';
-      return { route };
-    };
-
-    const portfolioAgentNode = async (
-      state: typeof StateWithRoute.State
-    ): Promise<Partial<typeof StateWithRoute.State>> => {
-      const systemContent = state.portfolioContext
-        ? `${PORTFOLIO_SYSTEM_PREFIX}\n\n${state.portfolioContext}`
-        : PORTFOLIO_SYSTEM_PREFIX + '\n\nNo portfolio data available. Say so briefly.';
-      const response = await model.invoke([
-        new SystemMessage(systemContent),
-        ...state.messages
-      ]);
-      return { messages: [response] };
-    };
-
-    const generalAgentNode = async (
-      state: typeof StateWithRoute.State
-    ): Promise<Partial<typeof StateWithRoute.State>> => {
-      const response = await model.invoke([
-        new SystemMessage(GENERAL_SYSTEM),
-        ...state.messages
-      ]);
-      return { messages: [response] };
-    };
-
-    graphWithRoute.addNode('router', routerNodeWithRoute);
-    graphWithRoute.addNode('portfolio_agent', portfolioAgentNode);
-    graphWithRoute.addNode('general_agent', generalAgentNode);
-
-    // LangGraph typings over-narrow node names; use cast so we can wire the graph as intended
-    const g = graphWithRoute as {
-      addEdge: (a: string, b: string) => void;
-      addConditionalEdges: (
-        source: string,
-        route: (state: typeof StateWithRoute.State) => string,
-        paths: Record<string, string>
-      ) => void;
-      compile: () => ReturnType<typeof graphWithRoute.compile>;
-    };
-    g.addEdge(START, 'router');
-    g.addConditionalEdges('router', (state) => state.route, {
-      portfolio: 'portfolio_agent',
-      general: 'general_agent'
-    });
-    g.addEdge('portfolio_agent', END);
-    g.addEdge('general_agent', END);
-
-    return g.compile();
   }
 }
