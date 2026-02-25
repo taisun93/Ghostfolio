@@ -1,13 +1,13 @@
 /**
  * GET: return messages from the user's latest conversation (one-to-many: user -> conversations).
  * POST: append one message to the latest conversation (or create one); entire conversation stored as JSON. Processing on server.
- * Requires Bearer token. Uses POSTGRES_URL or DATABASE_URL (Neon/Vercel Postgres).
+ * Requires Bearer token. Uses in-memory store for fast response; Postgres is updated in the background (POSTGRES_URL or DATABASE_URL).
  */
 import { neon } from '@neondatabase/serverless';
 
-export const config = { runtime: 'edge' };
+import { appendMessage, getMessages, setMessages, type MessageRow } from './store';
 
-type MessageRow = { id: string; role: string; text: string; at: string };
+export const config = { runtime: 'edge' };
 
 function getUserId(req: Request): string | null {
   const auth = req.headers.get('Authorization') || '';
@@ -44,6 +44,43 @@ function parseMessages(messages: unknown): MessageRow[] {
   );
 }
 
+/** Persist messages to Postgres in the background (do not await). */
+function persistToPostgresInBackground(
+  connectionString: string,
+  userId: string,
+  messages: MessageRow[]
+): void {
+  const now = new Date().toISOString();
+  void (async () => {
+    try {
+      const sql = neon(connectionString);
+      await ensureTable(sql);
+      const existing = await sql`
+        SELECT id
+        FROM ai_chat_conversations
+        WHERE user_id = ${userId}
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `;
+      const row = Array.isArray(existing) ? existing[0] : existing;
+      if (row) {
+        await sql`
+          UPDATE ai_chat_conversations
+          SET messages = ${JSON.stringify(messages)}::jsonb, updated_at = ${now}::timestamptz
+          WHERE id = ${(row as { id: string }).id}
+        `;
+      } else {
+        await sql`
+          INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
+          VALUES (${userId}, ${JSON.stringify(messages)}::jsonb, ${now}::timestamptz)
+        `;
+      }
+    } catch (err) {
+      console.error('AI chat background persist', err);
+    }
+  })();
+}
+
 export async function GET(req: Request) {
   const userId = getUserId(req);
   if (!userId) {
@@ -53,12 +90,22 @@ export async function GET(req: Request) {
     });
   }
 
+  // Serve from memory immediately when available (no Postgres wait).
+  const cached = getMessages(userId);
+  if (cached !== undefined) {
+    return new Response(JSON.stringify(cached), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200
+    });
+  }
+
   const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!connectionString) {
-    return new Response(
-      JSON.stringify({ message: 'Postgres not configured (set POSTGRES_URL or DATABASE_URL)' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    );
+    setMessages(userId, []);
+    return new Response(JSON.stringify([]), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200
+    });
   }
 
   try {
@@ -73,16 +120,18 @@ export async function GET(req: Request) {
     `;
     const row = Array.isArray(rows) ? rows[0] : rows;
     const messages = row ? parseMessages((row as { messages: unknown }).messages) : [];
+    setMessages(userId, messages);
     return new Response(JSON.stringify(messages), {
       headers: { 'Content-Type': 'application/json' },
       status: 200
     });
   } catch (err) {
     console.error('AI chat GET', err);
-    return new Response(
-      JSON.stringify({ message: err instanceof Error ? err.message : 'Database error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    setMessages(userId, []);
+    return new Response(JSON.stringify([]), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200
+    });
   }
 }
 
@@ -113,63 +162,34 @@ export async function POST(req: Request) {
     });
   }
 
+  const now = new Date().toISOString();
+  const newMessage: MessageRow = {
+    id: crypto.randomUUID(),
+    role,
+    text: content,
+    at: now
+  };
+
+  // Use existing in-memory conversation or start fresh (no DB read here; GET hydrates cache).
+  if (getMessages(userId) === undefined) {
+    setMessages(userId, []);
+  }
+  appendMessage(userId, newMessage);
+  const updated = getMessages(userId)!;
+
+  // Persist to Postgres in the background (do not block the response).
   const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
-  if (!connectionString) {
-    return new Response(
-      JSON.stringify({ message: 'Postgres not configured' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    );
+  if (connectionString) {
+    persistToPostgresInBackground(connectionString, userId, updated);
   }
 
-  try {
-    const sql = neon(connectionString);
-    await ensureTable(sql);
-    const now = new Date().toISOString();
-    const newMessage: MessageRow = {
-      id: crypto.randomUUID(),
-      role,
-      text: content,
-      at: now
-    };
-
-    const existing = await sql`
-      SELECT id, messages
-      FROM ai_chat_conversations
-      WHERE user_id = ${userId}
-      ORDER BY updated_at DESC
-      LIMIT 1
-    `;
-    const row = Array.isArray(existing) ? existing[0] : existing;
-
-    if (row) {
-      const current = parseMessages((row as { messages: unknown }).messages);
-      const updated = [...current, newMessage];
-      await sql`
-        UPDATE ai_chat_conversations
-        SET messages = ${JSON.stringify(updated)}::jsonb, updated_at = ${now}::timestamptz
-        WHERE id = ${(row as { id: string }).id}
-      `;
-    } else {
-      await sql`
-        INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
-        VALUES (${userId}, ${JSON.stringify([newMessage])}::jsonb, ${now}::timestamptz)
-      `;
-    }
-
-    return new Response(
-      JSON.stringify({
-        id: newMessage.id,
-        role: newMessage.role,
-        text: newMessage.text,
-        at: newMessage.at
-      }),
-      { status: 201, headers: { 'Content-Type': 'application/json' } }
-    );
-  } catch (err) {
-    console.error('AI chat POST', err);
-    return new Response(
-      JSON.stringify({ message: err instanceof Error ? err.message : 'Database error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
+  return new Response(
+    JSON.stringify({
+      id: newMessage.id,
+      role: newMessage.role,
+      text: newMessage.text,
+      at: newMessage.at
+    }),
+    { status: 201, headers: { 'Content-Type': 'application/json' } }
+  );
 }

@@ -1,9 +1,11 @@
 /**
  * POST: start a new conversation (insert empty conversation for user).
  * Next GET /api/v1/ai-chat/messages returns []; next POST appends to this conversation.
- * Requires Bearer token. Uses POSTGRES_URL or DATABASE_URL (Neon/Vercel Postgres).
+ * Requires Bearer token. In-memory store is cleared immediately; Postgres is updated in the background.
  */
 import { neon } from '@neondatabase/serverless';
+
+import { clearMessages } from './store';
 
 export const config = { runtime: 'edge' };
 
@@ -38,35 +40,27 @@ export async function POST(req: Request) {
     });
   }
 
+  clearMessages(userId);
+
   const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
-  if (!connectionString) {
-    return new Response(
-      JSON.stringify({
-        message: 'Postgres not configured (set POSTGRES_URL or DATABASE_URL)'
-      }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    );
+  if (connectionString) {
+    void (async () => {
+      try {
+        const sql = neon(connectionString);
+        await ensureTable(sql);
+        const now = new Date().toISOString();
+        await sql`
+          INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
+          VALUES (${userId}, '[]'::jsonb, ${now}::timestamptz)
+        `;
+      } catch (err) {
+        console.error('AI chat new background', err);
+      }
+    })();
   }
 
-  try {
-    const sql = neon(connectionString);
-    await ensureTable(sql);
-    const now = new Date().toISOString();
-    await sql`
-      INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
-      VALUES (${userId}, '[]'::jsonb, ${now}::timestamptz)
-    `;
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 201,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (err) {
-    console.error('AI chat new', err);
-    return new Response(
-      JSON.stringify({
-        message: err instanceof Error ? err.message : 'Database error'
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 201,
+    headers: { 'Content-Type': 'application/json' }
+  });
 }
