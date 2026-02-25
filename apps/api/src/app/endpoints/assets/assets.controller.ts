@@ -34,6 +34,19 @@ export class AssetsController {
     @Param('languageCode') languageCode: string,
     @Res() response: Response
   ): void {
+    this.sendWebManifest(languageCode, response);
+  }
+
+  @Get('/:languageCode')
+  @Version(VERSION_NEUTRAL)
+  public getWebManifestShort(
+    @Param('languageCode') languageCode: string,
+    @Res() response: Response
+  ): void {
+    this.sendWebManifest(languageCode, response);
+  }
+
+  private sendWebManifest(languageCode: string, response: Response): void {
     const rootUrl = this.configurationService.get('ROOT_URL');
     const webManifest = interpolate(this.webManifest, {
       languageCode,
