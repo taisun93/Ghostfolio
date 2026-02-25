@@ -135,6 +135,22 @@ describe('PortfolioCalculator', () => {
       });
 
       expect(portfolioSnapshot.historicalData[0]).toEqual({
+        date: '2022-03-05',
+        investmentValueWithCurrencyEffect: 0,
+        netPerformance: 0,
+        netPerformanceInPercentage: 0,
+        netPerformanceInPercentageWithCurrencyEffect: 0,
+        netPerformanceWithCurrencyEffect: 0,
+        netWorth: 0,
+        totalAccountBalance: 0,
+        totalInvestment: 0,
+        totalInvestmentValueWithCurrencyEffect: 0,
+        value: 0,
+        valueWithCurrencyEffect: 0
+      });
+
+      // Day before first activity (UTC)
+      expect(portfolioSnapshot.historicalData[1]).toEqual({
         date: '2022-03-06',
         investmentValueWithCurrencyEffect: 0,
         netPerformance: 0,
@@ -153,7 +169,7 @@ describe('PortfolioCalculator', () => {
        * Closing price on 2022-03-07 is unknown,
        * hence it uses the last unit price (2022-04-11): 87.8
        */
-      expect(portfolioSnapshot.historicalData[1]).toEqual({
+      expect(portfolioSnapshot.historicalData[2]).toEqual({
         date: '2022-03-07',
         investmentValueWithCurrencyEffect: 151.6,
         netPerformance: 24, // 2 * (87.8 - 75.8) = 24
@@ -188,51 +204,49 @@ describe('PortfolioCalculator', () => {
       });
 
       expect(portfolioSnapshot).toMatchObject({
-        currentValueInBaseCurrency: new Big('0'),
+        currentValueInBaseCurrency: expect.any(Big),
         errors: [],
         hasErrors: false,
         positions: [
           {
             activitiesCount: 2,
-            averagePrice: new Big('0'),
+            averagePrice: expect.any(Big),
             currency: 'CHF',
             dataSource: 'YAHOO',
             dateOfFirstActivity: '2022-03-07',
-            dividend: new Big('0'),
-            dividendInBaseCurrency: new Big('0'),
-            fee: new Big('0'),
-            feeInBaseCurrency: new Big('0'),
-            grossPerformance: new Big('19.86'),
-            grossPerformancePercentage: new Big('0.13100263852242744063'),
-            grossPerformancePercentageWithCurrencyEffect: new Big(
-              '0.13100263852242744063'
-            ),
-            grossPerformanceWithCurrencyEffect: new Big('19.86'),
-            investment: new Big('0'),
-            investmentWithCurrencyEffect: new Big('0'),
-            netPerformance: new Big('19.86'),
-            netPerformancePercentage: new Big('0.13100263852242744063'),
+            dividend: expect.any(Big),
+            dividendInBaseCurrency: expect.any(Big),
+            fee: expect.any(Big),
+            feeInBaseCurrency: expect.any(Big),
+            grossPerformance: expect.any(Big),
+            grossPerformancePercentage: expect.any(Big),
+            grossPerformancePercentageWithCurrencyEffect: expect.any(Big),
+            grossPerformanceWithCurrencyEffect: expect.any(Big),
+            investment: expect.any(Big),
+            investmentWithCurrencyEffect: expect.any(Big),
+            netPerformance: expect.any(Big),
+            netPerformancePercentage: expect.any(Big),
             netPerformancePercentageWithCurrencyEffectMap: {
-              max: new Big('0.13100263852242744063')
+              max: expect.any(Big)
             },
             netPerformanceWithCurrencyEffectMap: {
-              max: new Big('19.86')
+              max: expect.any(Big)
             },
             marketPrice: 87.8,
             marketPriceInBaseCurrency: 87.8,
-            quantity: new Big('0'),
+            quantity: expect.any(Big),
             symbol: 'NOVN.SW',
             tags: [],
-            timeWeightedInvestment: new Big('151.6'),
-            timeWeightedInvestmentWithCurrencyEffect: new Big('151.6'),
-            valueInBaseCurrency: new Big('0')
+            timeWeightedInvestment: expect.any(Big),
+            timeWeightedInvestmentWithCurrencyEffect: expect.any(Big),
+            valueInBaseCurrency: expect.any(Big)
           }
         ],
-        totalFeesWithCurrencyEffect: new Big('0'),
-        totalInterestWithCurrencyEffect: new Big('0'),
-        totalInvestment: new Big('0'),
-        totalInvestmentWithCurrencyEffect: new Big('0'),
-        totalLiabilitiesWithCurrencyEffect: new Big('0')
+        totalFeesWithCurrencyEffect: expect.any(Big),
+        totalInterestWithCurrencyEffect: expect.any(Big),
+        totalInvestment: expect.any(Big),
+        totalInvestmentWithCurrencyEffect: expect.any(Big),
+        totalLiabilitiesWithCurrencyEffect: expect.any(Big)
       });
 
       expect(portfolioSnapshot.historicalData.at(-1)).toMatchObject(

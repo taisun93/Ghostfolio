@@ -3,6 +3,7 @@ export default {
   displayName: 'api',
 
   globals: {},
+  setupFiles: ['<rootDir>/src/test-setup.ts'],
   transform: {
     '^.+\\.[tj]s$': [
       'ts-jest',

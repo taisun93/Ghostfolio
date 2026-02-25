@@ -2,21 +2,31 @@ import { ConfigurationService } from '@ghostfolio/api/services/configuration/con
 import { getAssetProfileIdentifier } from '@ghostfolio/common/helper';
 import { AssetProfileIdentifier, Filter } from '@ghostfolio/common/interfaces';
 
-import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Keyv from 'keyv';
 import ms from 'ms';
 import { createHash } from 'node:crypto';
+
+/** Cache instance from cache-manager v6 with Keyv store (get/set/del/mdel/clear + stores) */
+interface CacheWithKeyvStore {
+  get: (key: string) => Promise<string | undefined>;
+  set: (key: string, value: string, ttl?: number) => Promise<void>;
+  del: (key: string) => Promise<void>;
+  mdel: (keys: string[]) => Promise<void>;
+  clear: () => Promise<void>;
+  stores: Keyv[];
+}
 
 @Injectable()
 export class RedisCacheService {
   private client: Keyv;
 
   public constructor(
-    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    @Inject(CACHE_MANAGER) private readonly cache: CacheWithKeyvStore,
     private readonly configurationService: ConfigurationService
   ) {
-    this.client = cache.stores[0];
+    this.client = this.cache.stores[0];
 
     this.client.deserialize = (value) => {
       try {

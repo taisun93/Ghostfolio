@@ -72,6 +72,7 @@
     "@internationalized/number": "3.6.5",
     "@ionic/angular": "8.7.8",
     "@keyv/redis": "4.4.0",
+    "keyv": "^5.3.3",
     "@langchain/core": "^0.3.80",
     "@langchain/langgraph": "^0.2.74",
     "@langchain/openai": "^0.3.17",

@@ -19,7 +19,7 @@ import {
   PORTFOLIO_SNAPSHOT_COMPUTATION_QUEUE_PRIORITY_LOW
 } from '@ghostfolio/common/config';
 import {
-  DATE_FORMAT,
+  formatDateToUTCString,
   getSum,
   parseDate,
   resetHours
@@ -48,7 +48,6 @@ import {
   eachYearOfInterval,
   endOfDay,
   endOfYear,
-  format,
   isAfter,
   isBefore,
   isWithinInterval,
@@ -142,7 +141,7 @@ export abstract class PortfolioCalculator {
             SymbolProfile,
             tags,
             type,
-            date: format(date, DATE_FORMAT),
+            date: formatDateToUTCString(date),
             fee: new Big(feeInAssetProfileCurrency),
             feeInBaseCurrency: new Big(feeInBaseCurrency),
             quantity: new Big(quantity),
@@ -261,7 +260,7 @@ export abstract class PortfolioCalculator {
     } = {};
 
     for (const marketSymbol of marketSymbols) {
-      const date = format(marketSymbol.date, DATE_FORMAT);
+      const date = formatDateToUTCString(marketSymbol.date);
 
       if (!marketSymbolMap[date]) {
         marketSymbolMap[date] = {};
@@ -274,7 +273,7 @@ export abstract class PortfolioCalculator {
       }
     }
 
-    const endDateString = format(this.endDate, DATE_FORMAT);
+    const endDateString = formatDateToUTCString(this.endDate);
 
     const daysInMarket = differenceInDays(this.endDate, this.startDate);
 
@@ -858,7 +857,7 @@ export abstract class PortfolioCalculator {
       { end: endDate, start: startDate },
       { step }
     )) {
-      chartDateMap[format(date, DATE_FORMAT)] = true;
+      chartDateMap[formatDateToUTCString(date)] = true;
     }
 
     if (step > 1) {
@@ -867,7 +866,7 @@ export abstract class PortfolioCalculator {
         { end: endDate, start: subDays(endDate, 90) },
         { step: 3 }
       )) {
-        chartDateMap[format(date, DATE_FORMAT)] = true;
+        chartDateMap[formatDateToUTCString(date)] = true;
       }
 
       // Reduce the step size of last 30 days
@@ -875,12 +874,12 @@ export abstract class PortfolioCalculator {
         { end: endDate, start: subDays(endDate, 30) },
         { step: 1 }
       )) {
-        chartDateMap[format(date, DATE_FORMAT)] = true;
+        chartDateMap[formatDateToUTCString(date)] = true;
       }
     }
 
     // Make sure the end date is present
-    chartDateMap[format(endDate, DATE_FORMAT)] = true;
+    chartDateMap[formatDateToUTCString(endDate)] = true;
 
     // Make sure some key dates are present
     for (const dateRange of ['1d', '1y', '5y', 'max', 'mtd', 'wtd', 'ytd']) {
@@ -891,14 +890,14 @@ export abstract class PortfolioCalculator {
         !isBefore(dateRangeStart, startDate) &&
         !isAfter(dateRangeStart, endDate)
       ) {
-        chartDateMap[format(dateRangeStart, DATE_FORMAT)] = true;
+        chartDateMap[formatDateToUTCString(dateRangeStart)] = true;
       }
 
       if (
         !isBefore(dateRangeEnd, startDate) &&
         !isAfter(dateRangeEnd, endDate)
       ) {
-        chartDateMap[format(dateRangeEnd, DATE_FORMAT)] = true;
+        chartDateMap[formatDateToUTCString(dateRangeEnd)] = true;
       }
     }
 
@@ -911,12 +910,12 @@ export abstract class PortfolioCalculator {
 
       if (isWithinInterval(yearStart, interval)) {
         // Add start of year (YYYY-01-01)
-        chartDateMap[format(yearStart, DATE_FORMAT)] = true;
+        chartDateMap[formatDateToUTCString(yearStart)] = true;
       }
 
       if (isWithinInterval(yearEnd, interval)) {
         // Add end of year (YYYY-12-31)
-        chartDateMap[format(yearEnd, DATE_FORMAT)] = true;
+        chartDateMap[formatDateToUTCString(yearEnd)] = true;
       }
     }
 
