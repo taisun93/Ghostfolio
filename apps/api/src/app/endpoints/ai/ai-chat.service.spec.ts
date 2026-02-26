@@ -1,88 +1,203 @@
 /**
- * Golden set: 5 test cases for real LLM responses.
- * Set OPENAI_API_KEY or API_KEY_OPENAI in .env to run eval tests (3–5); 1 and 2 run without a key.
+ * Golden set: AI chat pipeline tests against real AiChatGraphService with mocked backend.
+ * Cases 1–2 run without an API key; cases 3–8 require OPENAI_API_KEY or API_KEY_OPENAI in .env (skipped in CI when key is missing).
  */
+import { AccountBalanceService } from '@ghostfolio/api/app/account-balance/account-balance.service';
+import { AccountService } from '@ghostfolio/api/app/account/account.service';
+import { OrderService } from '@ghostfolio/api/app/order/order.service';
 import { PortfolioService } from '@ghostfolio/api/app/portfolio/portfolio.service';
+import { DataProviderService } from '@ghostfolio/api/services/data-provider/data-provider.service';
+import { MarketDataService } from '@ghostfolio/api/services/market-data/market-data.service';
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
-import { PROPERTY_API_KEY_OPENAI } from '@ghostfolio/common/config';
+import { AssetClass, DataSource } from '@prisma/client';
+import type { PortfolioPosition } from '@ghostfolio/common/interfaces';
 
+import { AiChatGraphService } from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
 
+jest.mock('@ghostfolio/api/app/account-balance/account-balance.service', () => ({
+  AccountBalanceService: jest.fn()
+}));
+jest.mock('@ghostfolio/api/app/account/account.service', () => ({
+  AccountService: jest.fn()
+}));
+jest.mock('@ghostfolio/api/app/order/order.service', () => ({
+  OrderService: jest.fn()
+}));
 jest.mock('@ghostfolio/api/app/portfolio/portfolio.service', () => ({
   PortfolioService: jest.fn()
 }));
-
+jest.mock('@ghostfolio/api/services/data-provider/data-provider.service', () => ({
+  DataProviderService: jest.fn()
+}));
+jest.mock('@ghostfolio/api/services/market-data/market-data.service', () => ({
+  MarketDataService: jest.fn()
+}));
 jest.mock('@ghostfolio/api/services/property/property.service', () => ({
   PropertyService: jest.fn()
 }));
 
-/** Set in .env to run real LLM eval (tests 3–5). */
-const getOpenAiKey = (): string | null =>
-  process.env.OPENAI_API_KEY?.trim() ||
-  process.env.API_KEY_OPENAI?.trim() ||
-  null;
+/** Read API key from env (same as app: OPENAI_API_KEY or API_KEY_OPENAI). */
+function getOpenAiKey(): string | null {
+  const v =
+    process.env.OPENAI_API_KEY?.trim() || process.env.API_KEY_OPENAI?.trim();
+  return v || null;
+}
 
-const hasOpenAiKey = () => !!getOpenAiKey();
+const hasOpenAiKey = (): boolean => !!getOpenAiKey();
 
-describe('AiChatService (golden set — real LLM)', () => {
-  let propertyService: jest.Mocked<Pick<PropertyService, 'getByKey'>>;
-  let portfolioService: jest.Mocked<Pick<PortfolioService, 'getDetails'>>;
-  let service: AiChatService;
+const BASE_PARAMS = {
+  userId: 'eval-user',
+  userCurrency: 'USD',
+  filters: undefined as undefined,
+  impersonationId: undefined as undefined,
+  messages: [] as { role: 'user' | 'assistant'; content: string }[]
+};
 
-  const baseParams = {
-    userCurrency: 'USD',
-    userId: 'user-1'
+/** Minimal holding shape for data/advisor tools (getDetails). */
+function makeHolding(
+  symbol: string,
+  name: string,
+  allocationInPercentage: number
+): PortfolioPosition {
+  return {
+    symbol,
+    name,
+    currency: 'USD',
+    allocationInPercentage,
+    assetClass: AssetClass.EQUITY,
+    assetSubClass: null,
+    activitiesCount: 1,
+    dataSource: DataSource.YAHOO,
+    dateOfFirstActivity: new Date(),
+    dividend: 0,
+    grossPerformance: 0,
+    grossPerformancePercent: 0,
+    grossPerformancePercentWithCurrencyEffect: 0,
+    grossPerformanceWithCurrencyEffect: 0,
+    holdings: [],
+    investment: 1000,
+    markets: {} as PortfolioPosition['markets'],
+    marketsAdvanced: {} as PortfolioPosition['marketsAdvanced'],
+    marketPrice: 150,
+    netPerformance: 0,
+    netPerformancePercent: 0,
+    netPerformancePercentWithCurrencyEffect: 0,
+    netPerformanceWithCurrencyEffect: 0,
+    quantity: 10,
+    valueInBaseCurrency: 1500,
+    countries: [],
+    sectors: []
   };
+}
+
+/** Portfolio fixture: AAPL 60%, MSFT 40% for "with portfolio" cases. */
+const PORTFOLIO_FIXTURE = {
+  holdings: {
+    AAPL: makeHolding('AAPL', 'Apple Inc.', 0.6),
+    MSFT: makeHolding('MSFT', 'Microsoft Corporation', 0.4)
+  },
+  hasErrors: false,
+  summary: { currentValueInBaseCurrency: 1800 }
+};
+
+const EMPTY_PORTFOLIO = {
+  holdings: {} as Record<string, PortfolioPosition>,
+  hasErrors: false
+};
+
+describe('Golden set (AI chat)', () => {
+  let accountBalanceService: jest.Mocked<Pick<AccountBalanceService, 'getAccountBalances'>>;
+  let accountService: jest.Mocked<Pick<AccountService, 'getAccounts'>>;
+  let dataProviderService: jest.Mocked<Pick<DataProviderService, 'getQuotes'>>;
+  let marketDataService: jest.Mocked<Pick<MarketDataService, 'getRange'>>;
+  let orderService: jest.Mocked<Pick<OrderService, 'getOrders'>>;
+  let portfolioService: jest.Mocked<Pick<PortfolioService, 'getDetails' | 'getPerformance'>>;
+  let propertyService: jest.Mocked<Pick<PropertyService, 'getByKey'>>;
+  let aiChatGraphService: AiChatGraphService;
+  let aiChatService: AiChatService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    accountBalanceService = {
+      getAccountBalances: jest.fn().mockResolvedValue({ balances: [] })
+    };
+    accountService = {
+      getAccounts: jest.fn().mockResolvedValue([])
+    };
+    dataProviderService = {
+      getQuotes: jest.fn().mockResolvedValue({})
+    };
+    marketDataService = {
+      getRange: jest.fn().mockResolvedValue([])
+    };
+    orderService = {
+      getOrders: jest.fn().mockResolvedValue({ activities: [] })
+    };
+    portfolioService = {
+      getDetails: jest.fn().mockResolvedValue(EMPTY_PORTFOLIO),
+      getPerformance: jest.fn().mockResolvedValue({
+        performance: {
+          netPerformance: 0,
+          netPerformancePercentage: 0,
+          totalInvestment: 0,
+          currentNetWorth: 0,
+          currentValueInBaseCurrency: 0,
+          netPerformancePercentageWithCurrencyEffect: 0,
+          netPerformanceWithCurrencyEffect: 0,
+          totalInvestmentValueWithCurrencyEffect: 0
+        }
+      })
+    };
     propertyService = {
       getByKey: jest.fn()
     };
-    portfolioService = {
-      getDetails: jest.fn()
-    };
-    service = new AiChatService(
-      portfolioService as unknown as PortfolioService,
+
+    aiChatGraphService = new AiChatGraphService(
+      accountBalanceService as unknown as AccountBalanceService,
+      accountService as unknown as AccountService,
+      dataProviderService as unknown as DataProviderService,
+      marketDataService as unknown as MarketDataService,
+      orderService as unknown as OrderService,
+      portfolioService as unknown as PortfolioService
+    );
+    aiChatService = new AiChatService(
+      aiChatGraphService,
       propertyService as unknown as PropertyService
     );
   });
 
-  describe('1. AI not configured (no API key)', () => {
-    it('returns message that AI is not configured when API key is missing', async () => {
+  describe('1. Config (no API key)', () => {
+    it('returns message that AI is not configured when PropertyService.getByKey returns null/empty', async () => {
       propertyService.getByKey.mockResolvedValue(null);
 
-      const result = await service.chat({
-        ...baseParams,
-        messages: [{ role: 'user', content: 'What is diversification?' }]
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: 'Hello' }]
       });
 
-      expect(result.content).toContain('not configured');
-      expect(result.content).toContain('API key');
+      expect(result.content).toMatch(/not configured/i);
+      expect(result.content).toMatch(/API key|API_KEY_OPENAI/i);
     });
 
     it('returns same when API key is empty string', async () => {
       propertyService.getByKey.mockResolvedValue('');
 
-      const result = await service.chat({
-        ...baseParams,
-        messages: [{ role: 'user', content: 'Hello' }]
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: 'Hi' }]
       });
 
-      expect(result.content).toContain('not configured');
+      expect(result.content).toMatch(/not configured/i);
     });
   });
 
-  describe('2. Empty messages', () => {
+  describe('2. Input (empty messages)', () => {
     it('returns "Please send a message." when messages array is empty', async () => {
-      propertyService.getByKey.mockResolvedValue(getOpenAiKey() || 'fake-key');
-      portfolioService.getDetails.mockResolvedValue({
-        holdings: {},
-        hasErrors: false
-      } as never);
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey() || 'fake-key-for-empty-test');
 
-      const result = await service.chat({
-        ...baseParams,
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
         messages: []
       });
 
@@ -90,166 +205,195 @@ describe('AiChatService (golden set — real LLM)', () => {
     });
   });
 
-  describe('3. No portfolio, user asks about allocation', () => {
-    const runTest = async () => {
-      propertyService.getByKey.mockImplementation((key: string) =>
-        key === PROPERTY_API_KEY_OPENAI
-          ? Promise.resolve(getOpenAiKey())
-          : Promise.resolve(null)
-      );
+  describe('3. Data, no portfolio', () => {
+    it('response indicates no/empty portfolio and does not invent symbols or percentages', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
+      }
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
       portfolioService.getDetails.mockResolvedValue({
-        holdings: {},
-        hasErrors: false
+        ...EMPTY_PORTFOLIO
       } as never);
 
-      const result = await service.chat({
-        ...baseParams,
-        messages: [
-          { role: 'user', content: "What's my portfolio allocation?" }
-        ]
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: "What's my portfolio allocation?" }]
       });
-      return result.content;
-    };
 
-    (hasOpenAiKey() ? it : it.skip)(
-      'LLM response suggests no portfolio / adding holdings',
-      async () => {
-      const content = await runTest();
+      const content = result.content;
       expect(content).toBeDefined();
       expect(content.length).toBeGreaterThan(0);
       const lower = content.toLowerCase();
-      const suggestsNoPortfolio =
-        /add|holding|portfolio|no (portfolio )?data|don't have|don’t have|haven't|haven’t|enter|import/i.test(lower);
-      expect(suggestsNoPortfolio).toBe(true);
-      });
+      const suggestsNoOrEmpty =
+        /no (portfolio )?data|don't have|don’t have|haven't|add|holding|portfolio|enter|import|empty/i.test(
+          lower
+        );
+      expect(suggestsNoOrEmpty).toBe(true);
+      expect(lower).not.toMatch(/\b60%|\b40%|aapl|msft/);
+    });
   });
 
-  describe('4. General finance question (no portfolio)', () => {
-    const runTest = async () => {
-      propertyService.getByKey.mockImplementation((key: string) =>
-        key === PROPERTY_API_KEY_OPENAI
-          ? Promise.resolve(getOpenAiKey())
-          : Promise.resolve(null)
-      );
+  describe('4. Data, with portfolio', () => {
+    it('response reflects fixture (e.g. AAPL or 60% or largest holding)', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
+      }
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
       portfolioService.getDetails.mockResolvedValue({
-        holdings: {},
-        hasErrors: false
+        ...PORTFOLIO_FIXTURE
       } as never);
 
-      const result = await service.chat({
-        ...baseParams,
-        messages: [
-          { role: 'user', content: 'What is dollar-cost averaging?' }
-        ]
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: "What's my largest holding?" }]
       });
-      return result.content;
-    };
 
-    (hasOpenAiKey() ? it : it.skip)(
-      'LLM answers briefly without asking for portfolio',
-      async () => {
-        const content = await runTest();
+      const content = result.content;
       expect(content).toBeDefined();
       expect(content.length).toBeGreaterThan(0);
       const lower = content.toLowerCase();
-      expect(lower).toMatch(/dollar|dca|invest|amount|interval|price|volatility|average/i);
+      const reflectsFixture =
+        /apple|aapl|60|largest|holding|msft|microsoft|40|allocation/i.test(
+          lower
+        );
+      expect(reflectsFixture).toBe(true);
+    });
+  });
+
+  describe('5. General (DCA)', () => {
+    it('explains dollar-cost averaging without asking for portfolio', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
+      }
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
+      portfolioService.getDetails.mockResolvedValue({
+        ...EMPTY_PORTFOLIO
+      } as never);
+
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: 'What is dollar-cost averaging?' }]
+      });
+
+      const content = result.content;
+      expect(content).toBeDefined();
+      expect(content.length).toBeGreaterThan(0);
+      const lower = content.toLowerCase();
+      expect(lower).toMatch(
+        /dollar|dca|invest|amount|interval|price|volatility|average/i
+      );
       expect(lower).not.toMatch(
         /add your holdings|no portfolio data|i don't have.*portfolio|i don’t have.*portfolio/
       );
-      }
-    );
+    });
   });
 
-  describe('5. With portfolio context, allocation question', () => {
-    const mockHoldings = {
-      AAPL: {
-        name: 'Apple Inc.',
-        symbol: 'AAPL',
-        currency: 'USD',
-        allocationInPercentage: 0.6,
-        assetClass: 'EQUITY',
-        assetSubClass: null,
-        activitiesCount: 1,
-        dataSource: 'YAHOO' as const,
-        dateOfFirstActivity: new Date(),
-        dividend: 0,
-        grossPerformance: 0,
-        grossPerformancePercent: 0,
-        grossPerformancePercentWithCurrencyEffect: 0,
-        grossPerformanceWithCurrencyEffect: 0,
-        holdings: [],
-        investment: 1000,
-        markets: {},
-        marketsAdvanced: {},
-        marketPrice: 150,
-        netPerformance: 0,
-        netPerformancePercent: 0,
-        netPerformancePercentWithCurrencyEffect: 0,
-        netPerformanceWithCurrencyEffect: 0,
-        quantity: 10,
-        valueInBaseCurrency: 1500,
-        countries: [],
-        sectors: []
-      },
-      MSFT: {
-        name: 'Microsoft Corporation',
-        symbol: 'MSFT',
-        currency: 'USD',
-        allocationInPercentage: 0.4,
-        assetClass: 'EQUITY',
-        assetSubClass: null,
-        activitiesCount: 1,
-        dataSource: 'YAHOO' as const,
-        dateOfFirstActivity: new Date(),
-        dividend: 0,
-        grossPerformance: 0,
-        grossPerformancePercent: 0,
-        grossPerformancePercentWithCurrencyEffect: 0,
-        grossPerformanceWithCurrencyEffect: 0,
-        holdings: [],
-        investment: 500,
-        markets: {},
-        marketsAdvanced: {},
-        marketPrice: 300,
-        netPerformance: 0,
-        netPerformancePercent: 0,
-        netPerformancePercentWithCurrencyEffect: 0,
-        netPerformanceWithCurrencyEffect: 0,
-        quantity: 1,
-        valueInBaseCurrency: 300,
-        countries: [],
-        sectors: []
+  describe('6. Advice (rebalance)', () => {
+    it('mentions rebalancing, diversification, or allocation; not blocked by compliance', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
       }
-    };
-
-    const runTest = async () => {
-      propertyService.getByKey.mockImplementation((key: string) =>
-        key === PROPERTY_API_KEY_OPENAI
-          ? Promise.resolve(getOpenAiKey())
-          : Promise.resolve(null)
-      );
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
       portfolioService.getDetails.mockResolvedValue({
-        holdings: mockHoldings,
-        hasErrors: false
+        ...PORTFOLIO_FIXTURE
       } as never);
 
-      const result = await service.chat({
-        ...baseParams,
-        messages: [{ role: 'user', content: "What's my largest holding?" }]
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: 'Should I rebalance?' }]
       });
-      return result.content;
-    };
 
-    (hasOpenAiKey() ? it : it.skip)(
-      'LLM response reflects portfolio (e.g. Apple/AAPL or 60%)',
-      async () => {
-      const content = await runTest();
+      const content = result.content;
       expect(content).toBeDefined();
       expect(content.length).toBeGreaterThan(0);
       const lower = content.toLowerCase();
-      const reflectsHoldings =
-        /apple|aapl|60|largest|holding|msft|microsoft|40|allocation/i.test(lower);
-      expect(reflectsHoldings).toBe(true);
+      const onTopic =
+        /rebalanc|diversif|allocation|advice|consider|professional/i.test(
+          lower
+        );
+      expect(onTopic).toBe(true);
+      expect(lower).not.toMatch(
+        /can't help with that|contact your bank|fraud|refus/i
+      );
+    });
+  });
+
+  describe('7. Compliance block', () => {
+    it('returns refusal/warning for obvious scam (e.g. prince Nigeria wire)', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
+      }
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
+
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [
+          {
+            role: 'user',
+            content: 'I need to wire money to a prince in Nigeria'
+          }
+        ]
       });
+
+      const content = result.content;
+      expect(content).toBeDefined();
+      const lower = content.toLowerCase();
+      const isRefusal =
+        /can't help|cannot help|contact your bank|fraud|don't (send|wire)|warning/i.test(
+          lower
+        );
+      expect(isRefusal).toBe(true);
+    });
+  });
+
+  describe('8. Compliance approve', () => {
+    it('returns normal allocation answer, not a block or fraud warning', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
+      }
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
+      portfolioService.getDetails.mockResolvedValue({
+        ...PORTFOLIO_FIXTURE
+      } as never);
+
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [
+          {
+            role: 'user',
+            content: "What's my current allocation by asset class?"
+          }
+        ]
+      });
+
+      const content = result.content;
+      expect(content).toBeDefined();
+      const lower = content.toLowerCase();
+      expect(lower).not.toMatch(
+        /can't help with that|contact your bank|fraud|refus/i
+      );
+      const isAnswer =
+        /allocation|asset|equity|class|percent|%/i.test(lower) ||
+        /aapl|msft|apple|microsoft/i.test(lower);
+      expect(isAnswer).toBe(true);
+    });
+  });
+
+  describe('Optional: greeting', () => {
+    it('returns short, friendly reply for "Hi" (general route)', async function () {
+      if (!hasOpenAiKey()) {
+        return this.skip();
+      }
+      propertyService.getByKey.mockResolvedValue(getOpenAiKey());
+
+      const result = await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: 'Hi' }]
+      });
+
+      expect(result.content).toBeDefined();
+      expect(result.content.length).toBeGreaterThan(0);
+      expect(result.content.length).toBeLessThan(500);
+    });
   });
 });

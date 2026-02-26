@@ -81,7 +81,8 @@ export class AiChatGraphService {
       userCurrency,
       userId
     };
-    const result = await graph.invoke(initialState);
+    // LangGraph invoke accepts partial state; cast satisfies strict UpdateType
+    const result = await graph.invoke(initialState as ChatGraphState);
     return result.finalContent ?? '';
   }
 
