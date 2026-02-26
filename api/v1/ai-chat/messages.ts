@@ -110,7 +110,7 @@ export async function GET(req: Request) {
 
   try {
     const sql = neon(connectionString);
-    await ensureTable(sql);
+    // Skip ensureTable on read path: one SELECT only (table is created on first write).
     const rows = await sql`
       SELECT messages
       FROM ai_chat_conversations
@@ -126,6 +126,7 @@ export async function GET(req: Request) {
       status: 200
     });
   } catch (err) {
+    // Table may not exist yet; return empty. ensureTable runs on first POST.
     console.error('AI chat GET', err);
     setMessages(userId, []);
     return new Response(JSON.stringify([]), {
