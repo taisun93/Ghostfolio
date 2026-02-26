@@ -23,6 +23,7 @@ import { SymbolProfileModule } from '@ghostfolio/api/services/symbol-profile/sym
 
 import { Module } from '@nestjs/common';
 
+import { AiChatGraphService } from './langgraph/ai-chat-graph.service';
 import { AiChatConversationController } from './ai-chat-conversation.controller';
 import { AiChatConversationService } from './ai-chat-conversation.service';
 import { AiChatService } from './ai-chat.service';
@@ -52,6 +53,7 @@ import { AiService } from './ai.service';
     AccountBalanceService,
     AccountService,
     AiChatConversationService,
+    AiChatGraphService,
     AiChatService,
     AiService,
     CurrentRateService,

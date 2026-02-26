@@ -1,0 +1,231 @@
+import { AccountBalanceService } from '@ghostfolio/api/app/account-balance/account-balance.service';
+import { AccountService } from '@ghostfolio/api/app/account/account.service';
+import { OrderService } from '@ghostfolio/api/app/order/order.service';
+import { PortfolioService } from '@ghostfolio/api/app/portfolio/portfolio.service';
+import { DataProviderService } from '@ghostfolio/api/services/data-provider/data-provider.service';
+import { MarketDataService } from '@ghostfolio/api/services/market-data/market-data.service';
+import type { Filter } from '@ghostfolio/common/interfaces';
+import { DataSource } from '@prisma/client';
+
+import { DynamicStructuredTool } from '@langchain/core/tools';
+import { z } from 'zod';
+
+const DEFAULT_DATA_SOURCE = DataSource.YAHOO;
+
+export interface DataAgentToolsContext {
+  filters?: Filter[];
+  impersonationId?: string;
+  userCurrency: string;
+  userId: string;
+}
+
+export interface DataAgentToolsServices {
+  accountBalanceService: AccountBalanceService;
+  accountService: AccountService;
+  dataProviderService: DataProviderService;
+  marketDataService: MarketDataService;
+  orderService: OrderService;
+  portfolioService: PortfolioService;
+}
+
+export function createDataAgentTools(
+  services: DataAgentToolsServices,
+  ctx: DataAgentToolsContext
+): DynamicStructuredTool[] {
+  const { filters, impersonationId, userCurrency, userId } = ctx;
+  const imp = impersonationId ?? '';
+
+  return [
+    new DynamicStructuredTool({
+      name: 'get_holdings',
+      description:
+        'Get current portfolio holdings and allocation. Returns symbols, quantities, allocation percentages, and value in user currency.',
+      schema: z.object({}),
+      func: async () => {
+        try {
+          const { holdings } = await services.portfolioService.getDetails({
+            filters,
+            impersonationId: imp,
+            userId,
+            withSummary: true
+          });
+          const rows = Object.values(holdings)
+            .sort((a, b) => (b.allocationInPercentage ?? 0) - (a.allocationInPercentage ?? 0))
+            .map(
+              (h) =>
+                `${h.symbol} ${((h.allocationInPercentage ?? 0) * 100).toFixed(2)}% ${h.currency} ${h.assetClass ?? ''} ${h.assetSubClass ?? ''}`
+            );
+          if (rows.length === 0) return 'No holdings.';
+          return `Holdings (base ${userCurrency}):\n${rows.join('\n')}`;
+        } catch (err) {
+          return `Error fetching holdings: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    }),
+    new DynamicStructuredTool({
+      name: 'get_portfolio_performance',
+      description:
+        'Get portfolio performance over a period: net performance, total investment, and percentage change.',
+      schema: z.object({
+        dateRange: z
+          .enum(['1d', '5d', '1m', '1y', '5y', 'max'])
+          .optional()
+          .describe('Time range for performance')
+      }),
+      func: async ({ dateRange = 'max' }) => {
+        try {
+          const perf = await services.portfolioService.getPerformance({
+            dateRange,
+            filters,
+            impersonationId: imp,
+            userId
+          });
+          const p = perf.performance;
+          return JSON.stringify({
+            netPerformance: p.netPerformance,
+            netPerformancePercentage: p.netPerformancePercentage,
+            totalInvestment: p.totalInvestment,
+            currentNetWorth: p.currentNetWorth
+          });
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    }),
+    new DynamicStructuredTool({
+      name: 'get_quote',
+      description: 'Get current price/quote for a symbol (e.g. AAPL, MSFT). Optionally specify dataSource like YAHOO.',
+      schema: z.object({
+        symbol: z.string().describe('Ticker symbol'),
+        dataSource: z.string().optional().describe('DataSource e.g. YAHOO')
+      }),
+      func: async ({ symbol, dataSource }) => {
+        try {
+          const ds =
+            dataSource && Object.values(DataSource).includes(dataSource as DataSource)
+              ? (dataSource as DataSource)
+              : DEFAULT_DATA_SOURCE;
+          const quotes = await services.dataProviderService.getQuotes({
+            items: [{ dataSource: ds, symbol }]
+          });
+          const q = quotes[symbol];
+          if (!q?.marketPrice) return `No quote for ${symbol}.`;
+          return JSON.stringify({
+            symbol,
+            marketPrice: q.marketPrice,
+            currency: q.currency,
+            marketState: q.marketState
+          });
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    }),
+    new DynamicStructuredTool({
+      name: 'get_historical_prices',
+      description:
+        'Get historical market prices for a symbol over a date range. Returns array of { date, marketPrice }.',
+      schema: z.object({
+        symbol: z.string().describe('Ticker symbol'),
+        dataSource: z.string().optional(),
+        startDate: z.string().optional().describe('YYYY-MM-DD'),
+        endDate: z.string().optional().describe('YYYY-MM-DD')
+      }),
+      func: async ({ symbol, dataSource, startDate, endDate }) => {
+        try {
+          const ds =
+            dataSource && Object.values(DataSource).includes(dataSource as DataSource)
+              ? (dataSource as DataSource)
+              : DEFAULT_DATA_SOURCE;
+          const start = startDate ? new Date(startDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+          const end = endDate ? new Date(endDate) : new Date();
+          const data = await services.marketDataService.getRange({
+            assetProfileIdentifiers: [{ dataSource: ds, symbol }],
+            dateQuery: { gte: start, lt: end }
+          });
+          const out = data.map((d) => ({ date: d.date.toISOString().slice(0, 10), marketPrice: d.marketPrice }));
+          return JSON.stringify(out.slice(-50));
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    }),
+    new DynamicStructuredTool({
+      name: 'list_accounts',
+      description: "List the user's accounts with name, platform, and activity count.",
+      schema: z.object({}),
+      func: async () => {
+        try {
+          const accounts = await services.accountService.getAccounts(userId);
+          return JSON.stringify(
+            accounts.map((a) => ({
+              id: a.id,
+              name: a.name,
+              platform: (a as { platform?: { name: string } }).platform?.name,
+              activitiesCount: (a as { activitiesCount?: number }).activitiesCount
+            }))
+          );
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    }),
+    new DynamicStructuredTool({
+      name: 'get_orders',
+      description: 'Get orders/activities for the user. Optionally filter by date range or types.',
+      schema: z.object({
+        startDate: z.string().optional().describe('YYYY-MM-DD'),
+        endDate: z.string().optional().describe('YYYY-MM-DD'),
+        take: z.number().optional().describe('Max number of orders to return')
+      }),
+      func: async ({ startDate, endDate, take = 50 }) => {
+        try {
+          const { activities } = await services.orderService.getOrders({
+            userId,
+            userCurrency,
+            filters,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            take
+          });
+          const summary = activities.slice(0, take).map((a) => ({
+            date: a.date,
+            type: a.type,
+            symbol: a.symbol,
+            quantity: a.quantity,
+            unitPrice: a.unitPrice
+          }));
+          return JSON.stringify(summary);
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    }),
+    new DynamicStructuredTool({
+      name: 'get_account_balances',
+      description: 'Get account balances over time (historical balance data per account).',
+      schema: z.object({}),
+      func: async () => {
+        try {
+          const { balances } = await services.accountBalanceService.getAccountBalances({
+            userId,
+            userCurrency,
+            filters
+          });
+          const byAccount = balances.reduce(
+            (acc, b) => {
+              const id = b.accountId;
+              if (!acc[id]) acc[id] = [];
+              acc[id].push({ date: b.date, valueInBaseCurrency: b.valueInBaseCurrency });
+              return acc;
+            },
+            {} as Record<string, { date: Date; valueInBaseCurrency: number }[]>
+          );
+          return JSON.stringify(byAccount);
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    })
+  ];
+}
