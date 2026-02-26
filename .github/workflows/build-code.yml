@@ -1,6 +1,8 @@
 name: Build code
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -35,6 +37,7 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # Full test suite (api, client, common, ui) via Nx with .env.example
       - name: Execute tests
         run: npm test
 
