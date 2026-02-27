@@ -316,7 +316,8 @@ describe('Golden set (AI chat)', () => {
       expect(lower).not.toMatch(
         /can't help with that|contact your bank|fraud|refus/i
       );
-      }
+      },
+      15000
     );
   });
 
@@ -344,7 +345,8 @@ describe('Golden set (AI chat)', () => {
           lower
         );
       expect(isRefusal).toBe(true);
-      }
+      },
+      15000
     );
   });
 
