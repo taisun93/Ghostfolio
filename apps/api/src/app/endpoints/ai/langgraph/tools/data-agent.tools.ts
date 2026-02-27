@@ -19,6 +19,16 @@ function tool(name: string, description: string, func: () => Promise<string>): D
   return new DynamicStructuredTool({ name, description, schema: emptySchema, func });
 }
 
+/** Wraps DynamicStructuredTool to avoid TS2589 (excessively deep instantiation) with Zod schemas. */
+function structuredTool<Schema extends z.ZodObject<z.ZodRawShape>>(config: {
+  name: string;
+  description: string;
+  schema: Schema;
+  func: (input: z.infer<Schema>) => Promise<string>;
+}): DynamicStructuredTool {
+  return new DynamicStructuredTool(config as Parameters<typeof DynamicStructuredTool>[0]) as DynamicStructuredTool;
+}
+
 export interface DataAgentToolsContext {
   filters?: Filter[];
   impersonationId?: string;
@@ -67,7 +77,7 @@ export function createDataAgentTools(
         }
       }
     ),
-    new DynamicStructuredTool({
+    structuredTool({
       name: 'get_portfolio_performance',
       description:
         'Get portfolio performance over a period: net performance, total investment, and percentage change.',
@@ -97,7 +107,7 @@ export function createDataAgentTools(
         }
       }
     }),
-    new DynamicStructuredTool({
+    structuredTool({
       name: 'get_quote',
       description: 'Get current price/quote for a symbol (e.g. AAPL, MSFT). Optionally specify dataSource like YAHOO.',
       schema: z.object({
@@ -126,7 +136,7 @@ export function createDataAgentTools(
         }
       }
     }),
-    new DynamicStructuredTool({
+    structuredTool({
       name: 'get_historical_prices',
       description:
         'Get historical market prices for a symbol over a date range. Returns array of { date, marketPrice }.',
@@ -174,7 +184,7 @@ export function createDataAgentTools(
         }
       }
     ),
-    new DynamicStructuredTool({
+    structuredTool({
       name: 'get_orders',
       description: 'Get orders/activities for the user. Optionally filter by date range or types.',
       schema: z.object({
