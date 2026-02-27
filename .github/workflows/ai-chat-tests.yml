@@ -18,6 +18,7 @@ permissions:
 jobs:
   ai-chat-report:
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,11 +32,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Larger heap for Jest (runner has ~7GB); OPENAI_API_KEY optional for LLM tests
+      # Larger heap for Jest (runner has ~7GB). API key from Production env → LLM tests run.
       - name: Run AI chat tests and generate report
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.API_KEY_OPENAI }}
         run: npx dotenv-cli -e .env.example -- node apps/api/scripts/run-ai-chat-tests-and-report.mjs
 
       - name: Upload report artifact
