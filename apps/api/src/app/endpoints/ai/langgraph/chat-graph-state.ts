@@ -6,6 +6,13 @@ import type { Filter } from '@ghostfolio/common/interfaces';
 export type RouteType = 'data' | 'advice' | 'general';
 export type ComplianceDecision = 'approve' | 'warn' | 'block';
 
+/** Record of a single tool invocation (for trace/eval). */
+export interface ToolCallRecord {
+  name: string;
+  args: Record<string, unknown>;
+  result: string;
+}
+
 /** Reducer: replace with update when present, else keep current (for last-value semantics). */
 const replace = <T>(_left: T, right: T): T => (right !== undefined ? right : _left) as T;
 
@@ -46,6 +53,10 @@ export const ChatGraphStateAnnotation = Annotation.Root({
   route: Annotation<RouteType | undefined>({
     reducer: replace,
     default: () => undefined
+  }),
+  toolCalls: Annotation<ToolCallRecord[]>({
+    reducer: replace,
+    default: () => []
   }),
   userId: Annotation<string>({
     reducer: (_, right) => (right !== undefined ? right : ''),

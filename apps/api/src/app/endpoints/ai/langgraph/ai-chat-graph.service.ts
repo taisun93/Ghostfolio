@@ -22,7 +22,8 @@ import {
   ChatGraphStateAnnotation,
   type ChatGraphState,
   type ComplianceDecision,
-  type RouteType
+  type RouteType,
+  type ToolCallRecord
 } from './chat-graph-state';
 import { createAdvisorAgentTools } from './tools/advisor-agent.tools';
 import { createDataAgentTools } from './tools/data-agent.tools';
@@ -72,6 +73,70 @@ export class AiChatGraphService {
     userCurrency: string;
     userId: string;
   }): Promise<string> {
+    const result = await this.invokeGraph({
+      filters,
+      impersonationId,
+      messages,
+      openAiKey,
+      userCurrency,
+      userId
+    });
+    return result.finalContent ?? '';
+  }
+
+  /**
+   * Run the chat graph and return content plus trace (route, tool calls).
+   * Use for eval and tests that assert on tool selection/execution.
+   */
+  public async runWithTrace({
+    filters,
+    impersonationId,
+    messages,
+    openAiKey,
+    userCurrency,
+    userId
+  }: {
+    filters?: Filter[];
+    impersonationId?: string;
+    messages: BaseMessage[];
+    openAiKey: string;
+    userCurrency: string;
+    userId: string;
+  }): Promise<{
+    content: string;
+    route: RouteType;
+    toolCalls: ToolCallRecord[];
+  }> {
+    const result = await this.invokeGraph({
+      filters,
+      impersonationId,
+      messages,
+      openAiKey,
+      userCurrency,
+      userId
+    });
+    return {
+      content: result.finalContent ?? '',
+      route: result.route ?? 'general',
+      toolCalls: result.toolCalls ?? []
+    };
+  }
+
+  private async invokeGraph({
+    filters,
+    impersonationId,
+    messages,
+    openAiKey,
+    userCurrency,
+    userId
+  }: {
+    filters?: Filter[];
+    impersonationId?: string;
+    messages: BaseMessage[];
+    openAiKey: string;
+    userCurrency: string;
+    userId: string;
+  }): Promise<ChatGraphState> {
     const graph = this.buildGraph(openAiKey);
     const initialState: Partial<ChatGraphState> = {
       filters,
@@ -81,10 +146,8 @@ export class AiChatGraphService {
       userCurrency,
       userId
     };
-    // LangGraph invoke accepts partial state; UpdateType differs from StateType so cast via unknown
     type InvokeInput = Parameters<typeof graph.invoke>[0];
-    const result = await graph.invoke(initialState as unknown as InvokeInput);
-    return result.finalContent ?? '';
+    return graph.invoke(initialState as unknown as InvokeInput) as Promise<ChatGraphState>;
   }
 
   private buildGraph(openAiKey: string) {
@@ -172,13 +235,13 @@ export class AiChatGraphService {
         userId: state.userId
       });
       const modelWithTools = dataModel.bindTools(tools);
-      const draftReply = await this.runToolLoop(
+      const { reply: draftReply, toolCalls } = await this.runToolLoop(
         modelWithTools,
         state.messages,
         DATA_AGENT_SYSTEM,
         tools
       );
-      return { draftReply };
+      return { draftReply, toolCalls };
     };
 
     const adviceAgent = async (
@@ -194,13 +257,13 @@ export class AiChatGraphService {
         }
       );
       const modelWithTools = adviceModel.bindTools(tools);
-      const draftReply = await this.runToolLoop(
+      const { reply: draftReply, toolCalls } = await this.runToolLoop(
         modelWithTools,
         state.messages,
         ADVICE_AGENT_SYSTEM,
         tools
       );
-      return { draftReply };
+      return { draftReply, toolCalls };
     };
 
     const generalAgent = async (
@@ -213,7 +276,7 @@ export class AiChatGraphService {
       const out = await generalModel.invoke(prompt);
       const draftReply =
         typeof out.content === 'string' ? out.content : String(out.content ?? '');
-      return { draftReply };
+      return { draftReply, toolCalls: [] };
     };
 
     const compliance = async (
@@ -306,18 +369,21 @@ export class AiChatGraphService {
     messages: BaseMessage[],
     systemContent: string,
     tools: StructuredToolInterface[]
-  ): Promise<string> {
+  ): Promise<{ reply: string; toolCalls: ToolCallRecord[] }> {
     const system = new SystemMessage(systemContent);
     let current: BaseMessage[] = [system, ...messages];
+    const toolCallRecords: ToolCallRecord[] = [];
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const response = await model.invoke(current);
-      const toolCalls = (response as AIMessage).tool_calls ?? [];
-      if (toolCalls.length === 0) {
+      const responseToolCalls = (response as AIMessage).tool_calls ?? [];
+      if (responseToolCalls.length === 0) {
         const content = response.content;
-        return typeof content === 'string' ? content : String(content ?? '');
+        const reply =
+          typeof content === 'string' ? content : String(content ?? '');
+        return { reply, toolCalls: toolCallRecords };
       }
       current = current.concat([response]);
-      for (const tc of toolCalls) {
+      for (const tc of responseToolCalls) {
         const tool = tools.find((t) => t.name === tc.name);
         let result: string;
         if (tool) {
@@ -329,6 +395,11 @@ export class AiChatGraphService {
         } else {
           result = 'Tool not found.';
         }
+        toolCallRecords.push({
+          name: tc.name,
+          args: (tc.args ?? {}) as Record<string, unknown>,
+          result
+        });
         current = current.concat([
           new ToolMessage({
             content: result,
@@ -337,6 +408,9 @@ export class AiChatGraphService {
         ]);
       }
     }
-    return 'I hit the iteration limit. Please try a simpler question.';
+    return {
+      reply: 'I hit the iteration limit. Please try a simpler question.',
+      toolCalls: toolCallRecords
+    };
   }
 }
