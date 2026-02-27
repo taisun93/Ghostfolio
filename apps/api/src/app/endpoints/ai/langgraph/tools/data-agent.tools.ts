@@ -86,6 +86,7 @@ export function createDataAgentTools(
         dateRange: z
           .enum(['1d', '5d', '1m', '1y', '5y', 'max'])
           .optional()
+          .nullable()
           .describe('Time range for performance')
       }),
       func: async ({ dateRange = 'max' }) => {
@@ -113,7 +114,7 @@ export function createDataAgentTools(
       description: 'Get current price/quote for a symbol (e.g. AAPL, MSFT). Optionally specify dataSource like YAHOO.',
       schema: z.object({
         symbol: z.string().describe('Ticker symbol'),
-        dataSource: z.string().optional().describe('DataSource e.g. YAHOO')
+        dataSource: z.string().optional().nullable().describe('DataSource e.g. YAHOO')
       }),
       func: async ({ symbol, dataSource }) => {
         try {
@@ -143,9 +144,9 @@ export function createDataAgentTools(
         'Get historical market prices for a symbol over a date range. Returns array of { date, marketPrice }.',
       schema: z.object({
         symbol: z.string().describe('Ticker symbol'),
-        dataSource: z.string().optional(),
-        startDate: z.string().optional().describe('YYYY-MM-DD'),
-        endDate: z.string().optional().describe('YYYY-MM-DD')
+        dataSource: z.string().optional().nullable(),
+        startDate: z.string().optional().nullable().describe('YYYY-MM-DD'),
+        endDate: z.string().optional().nullable().describe('YYYY-MM-DD')
       }),
       func: async ({ symbol, dataSource, startDate, endDate }) => {
         try {
@@ -189,9 +190,9 @@ export function createDataAgentTools(
       name: 'get_orders',
       description: 'Get orders/activities for the user. Optionally filter by date range or types.',
       schema: z.object({
-        startDate: z.string().optional().describe('YYYY-MM-DD'),
-        endDate: z.string().optional().describe('YYYY-MM-DD'),
-        take: z.number().optional().describe('Max number of orders to return')
+        startDate: z.string().optional().nullable().describe('YYYY-MM-DD'),
+        endDate: z.string().optional().nullable().describe('YYYY-MM-DD'),
+        take: z.number().optional().nullable().describe('Max number of orders to return')
       }),
       func: async ({ startDate, endDate, take = 50 }) => {
         try {
