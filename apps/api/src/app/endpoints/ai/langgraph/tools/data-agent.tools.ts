@@ -26,7 +26,8 @@ function structuredTool<Schema extends z.ZodObject<z.ZodRawShape>>(config: {
   schema: Schema;
   func: (input: z.infer<Schema>) => Promise<string>;
 }): DynamicStructuredTool {
-  return new DynamicStructuredTool(config as Parameters<typeof DynamicStructuredTool>[0]) as DynamicStructuredTool;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new DynamicStructuredTool(config as any) as DynamicStructuredTool;
 }
 
 export interface DataAgentToolsContext {
