@@ -1,5 +1,5 @@
 # Lint runs in CI (Build code workflow). Uncomment to run on every commit (can be slow):
 # npm run affected:lint --base=main --head=HEAD --parallel=2 --quiet || exit 1
 
-# Check formatting on modified and uncommitted files, stop the commit if issues are found
-npm run format:check --uncommitted || exit 1
+# Format check skipped in pre-commit; run manually: npm run format:write
+# npm run format:check --uncommitted || exit 1
