@@ -15,9 +15,9 @@ Ghostfolio's AI chat is a **LangGraph multi-agent pipeline**:
 - **General agent** → no tools; short replies for greetings/off-topic
 - **Compliance** → LLM-based approve/warn/block (e.g. scam detection)
 
-Existing tests: **~10 golden-set cases** in [apps/api/src/app/endpoints/ai/ai-chat.service.spec.ts](apps/api/src/app/endpoints/ai/ai-chat.service.spec.ts) (config, empty input, data with/without portfolio, DCA, rebalance, compliance block/approve). Many require `OPENAI_API_KEY` and are skipped in CI; report is written to `AI_CHAT_TEST_RESULTS_10.md`. The run script uses Jest with increased heap; **OOM (exit 134)** is common locally (CI uses 8GB).
+**Tests:** [apps/api/src/app/endpoints/ai/ai-chat.service.spec.ts](apps/api/src/app/endpoints/ai/ai-chat.service.spec.ts) now includes (1) **golden-set cases** (config, empty input, data with/without portfolio, DCA, rebalance, compliance block/approve, greeting), and (2) **tool selection** and **tool execution** tests that assert route and tool calls via `AiChatGraphService.runWithTrace()`. The graph state records `toolCalls` (`ToolCallRecord[]`: name, args, result); `runWithTrace()` returns `{ content, route, toolCalls }` for eval. Many tests require `OPENAI_API_KEY` and are skipped in CI; report is written to `AI_CHAT_TEST_RESULTS_10.md`. The run script uses Jest with increased heap; **OOM (exit 134)** can occur locally (CI uses 8GB).
 
-There is **no** trace logging, latency/token tracking, error categorization, eval scores over time, or user feedback in the AI path. **Verification** today is only the compliance step (no fact-check, hallucination detection, confidence, schema validation, or human-in-the-loop).
+**Still missing:** Trace logging in production, latency/token tracking, error categorization, persisted eval scores over time, and user feedback in the AI path. **Verification** is still only the compliance step (no fact-check, hallucination detection, confidence, schema validation, or human-in-the-loop).
 
 ---
 
@@ -28,14 +28,14 @@ There is **no** trace logging, latency/token tracking, error categorization, eva
 | Eval type          | Current coverage                                                                         | Gap                                                                                          |
 | ------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | **Correctness**    | Partial: golden tests assert content substrings (e.g. "no portfolio", "60%", "rebalanc") | No ground-truth fact-check; no authoritative source to compare against for portfolio numbers |
-| **Tool selection** | None                                                                                     | Router + agent choice not asserted; no "expected tool calls" in tests                        |
-| **Tool execution** | None                                                                                     | No test that checks tool success or parameter correctness                                    |
+| **Tool selection** | Done: tests assert route (data/advice/general) and expected tool names via `runWithTrace` | Could add more queries (e.g. list accounts, get quote) and dataset-driven cases              |
+| **Tool execution** | Done: tests assert tool calls succeed (result not `Error:`), e.g. get_holdings, advisor tools | Parameter correctness (e.g. symbol in get_quote args) only partially covered                |
 | **Safety**         | Partial: one compliance test (Nigeria scam block)                                        | No systematic adversarial suite; no hallucination or refusal-rate metrics                    |
 | **Consistency**    | None                                                                                     | Temperature > 0 on data/advice/general; same input can yield different output                |
 | **Edge cases**     | Minimal                                                                                  | Empty portfolio and "no API key" only; no invalid/ambiguous/missing-data matrix              |
 | **Latency**        | None                                                                                     | No timing in tests or production                                                             |
 
-**Conclusion:** You need a **structured eval harness** that (a) runs a fixed dataset of queries, (b) records route + tool calls + final answer, (c) compares to expected tool calls and pass/fail criteria, and (d) measures latency. Correctness "ground truth" for this app is largely **tool outputs + rules** (e.g. "if portfolio empty, response must not claim specific allocations") rather than external APIs.
+**Conclusion:** The pipeline can now be **driven by a structured eval harness**: (a) run a fixed dataset of queries via `runWithTrace`, (b) record route + tool calls + final answer, (c) compare to expected tool calls and pass/fail criteria. Still to add: (d) latency measurement, and a **dataset of 50+ cases** (JSON/YAML + runner). Correctness "ground truth" for this app is largely **tool outputs + rules** (e.g. "if portfolio empty, response must not claim specific allocations") rather than external APIs.
 
 ### 2. Eval dataset (50+ cases)
 
@@ -104,11 +104,31 @@ Optional but valuable:
 
 ---
 
+## Progress and what's still lacking
+
+### Done
+
+- **Tool selection tests:** Route (data/advice/general) and expected tool names asserted via `AiChatGraphService.runWithTrace()` in [ai-chat.service.spec.ts](apps/api/src/app/endpoints/ai/ai-chat.service.spec.ts).
+- **Tool execution tests:** Tool calls recorded (name, args, result); tests assert success (no `Error:` in result) for get_holdings, advisor tools, and empty-portfolio "No holdings" behavior.
+- **Trace surface for eval:** Graph state includes `toolCalls` ([chat-graph-state.ts](apps/api/src/app/endpoints/ai/langgraph/chat-graph-state.ts)); `runWithTrace()` returns `{ content, route, toolCalls }` ([ai-chat-graph.service.ts](apps/api/src/app/endpoints/ai/langgraph/ai-chat-graph.service.ts)). Production `run()` unchanged (returns string only).
+
+### Still lacking
+
+- **Eval dataset (50+ cases) and runner:** No JSON/YAML dataset with expectedRoute, expectedToolCalls, passCriteria; no runner that loads it, runs via `runWithTrace`, and scores pass/fail. Current tests are hand-written `it` blocks.
+- **Observability:** No trace logging (input → route → tool calls → output), no latency breakdown, no token usage, no structured error capture, no persisted eval history or regression check.
+- **Verification (2 more):** Only compliance exists. No hallucination/source-attribution check, no output validation (length, forbidden patterns), no confidence scoring or human-in-the-loop.
+- **Latency in tests:** No assertions on response time (<5 s single-tool, <15 s multi-step); no timing in production.
+- **User feedback:** No thumbs up/down or correction storage tied to request/message for joining with traces.
+- **Edge and adversarial coverage:** No dedicated tests for invalid symbol, no accounts, long input, prompt injection, or “recommend a stock” refusal.
+- **Eval results persistence and CI gate:** Eval run results are not stored; no regression check (e.g. fail CI if pass rate drops below 80%).
+
+---
+
 ## Suggested implementation order
 
-1. **Eval harness and dataset**
+1. **Eval dataset and runner** (builds on existing `runWithTrace`)
    - Add eval dataset (50+ cases in JSON/YAML) with input, expectedRoute, expectedToolCalls, output constraints, passCriteria.
-   - Implement a runner that: loads dataset, runs each case through `AiChatGraphService` (with mocks where appropriate), records route, tool calls, output, latency, and evaluates pass/fail.
+   - Implement a runner that: loads dataset, runs each case through `AiChatGraphService.runWithTrace()` (with mocks where appropriate), records route, tool calls, output, latency, and evaluates pass/fail.
    - Optionally integrate with CI (e.g. run on AI-related changes, fail if pass rate < 80% or critical tests fail).
 2. **Observability (minimal)**
    - Add request-scoped trace logging (input → route → tool calls → compliance → output).
@@ -122,10 +142,10 @@ Optional but valuable:
 5. **User feedback**
    - Add thumbs up/down (and optional comment) to chat API; store with requestId for joining with traces.
 6. **Performance and tuning**
-   - Enforce latency and pass-rate targets in CI; tune models and tool loops to meet <5 s / <15 s and >95% tool success.
+   - Add latency assertions in tests and/or production metrics; enforce <5 s / <15 s and >95% tool success in CI.
 
 ---
 
 ## Summary
 
-Your requirements are **well-aligned** with Ghostfolio's architecture: the app already has a clear tool set, routing, and compliance, so eval can focus on **route + tool selection + tool execution + safety + consistency + edge cases + latency**. The main gaps are: **(1)** a structured eval dataset and runner with explicit expected tool calls and pass/fail criteria, **(2)** observability (trace, latency, errors, tokens, eval history, feedback), and **(3)** at least two more verification mechanisms (hallucination/source attribution and output validation). Prioritizing the eval harness and minimal observability first will give you the data needed to tune verification and hit the performance targets systematically.
+Your requirements are **well-aligned** with Ghostfolio's architecture. **Done:** Tool selection and tool execution are covered by tests that use `runWithTrace()` to assert route and tool calls; the graph exposes `toolCalls` for eval. **Still lacking:** **(1)** A structured eval dataset (50+ cases) and a runner that uses `runWithTrace` to score pass/fail; **(2)** observability (trace logging, latency, tokens, errors, eval history, user feedback); **(3)** at least two more verification mechanisms (hallucination/source attribution and output validation); **(4)** latency measurement and CI gates for performance targets. Next priorities: eval dataset + runner, then minimal observability, then the two additional verification steps.

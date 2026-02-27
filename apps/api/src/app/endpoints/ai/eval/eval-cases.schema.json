@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Chat Eval Case",
+  "type": "object",
+  "required": ["id", "category", "input", "passCriteria"],
+  "properties": {
+    "id": { "type": "string" },
+    "category": { "enum": ["happy_path", "edge", "adversarial", "multi_step"] },
+    "input": { "type": "string" },
+    "fixture": {
+      "type": "object",
+      "properties": {
+        "portfolio": { "enum": ["full", "empty"] },
+        "accountsEmpty": { "type": "boolean" },
+        "performanceError": { "type": "boolean" }
+      }
+    },
+    "expectedRoute": { "enum": ["data", "advice", "general"] },
+    "expectedToolNames": { "type": "array", "items": { "type": "string" } },
+    "outputMustMatch": { "type": "string", "description": "Regex" },
+    "outputMustNotMatch": { "type": "string", "description": "Regex" },
+    "passCriteria": { "type": "string" }
+  }
+}
