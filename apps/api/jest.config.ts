@@ -1,6 +1,7 @@
 /* eslint-disable */
 export default {
   displayName: 'api',
+  maxWorkers: 2,
 
   globals: {},
   setupFiles: ['<rootDir>/src/test-setup.ts'],

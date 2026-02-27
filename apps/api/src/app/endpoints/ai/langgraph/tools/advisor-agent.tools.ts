@@ -18,6 +18,18 @@ export interface AdvisorAgentToolsServices {
 /**
  * High-level allocation summary by asset class for advice context.
  */
+const emptySchema = z.object({});
+
+/** Build a no-arg tool; cast avoids TS2589 (excessively deep instantiation) with DynamicStructuredTool. */
+function tool(
+  name: string,
+  description: string,
+  func: () => Promise<string>
+): DynamicStructuredTool {
+  // @ts-expect-error TS2589 - DynamicStructuredTool + z.object({}) causes excessively deep type instantiation
+  return new DynamicStructuredTool({ name, description, schema: emptySchema, func });
+}
+
 export function createAdvisorAgentTools(
   services: AdvisorAgentToolsServices,
   ctx: AdvisorAgentToolsContext
@@ -26,12 +38,10 @@ export function createAdvisorAgentTools(
   const imp = impersonationId ?? '';
 
   return [
-    new DynamicStructuredTool({
-      name: 'get_allocation_summary',
-      description:
-        'Get high-level allocation summary: allocation by asset class (equity, fixed income, liquidity, etc.) and optionally by region. Use for diversification and risk context.',
-      schema: z.object({}),
-      func: async () => {
+    tool(
+      'get_allocation_summary',
+      'Get high-level allocation summary: allocation by asset class (equity, fixed income, liquidity, etc.) and optionally by region. Use for diversification and risk context.',
+      async () => {
         try {
           const { holdings, summary } = await services.portfolioService.getDetails({
             filters,
@@ -54,13 +64,11 @@ export function createAdvisorAgentTools(
           return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
       }
-    }),
-    new DynamicStructuredTool({
-      name: 'analyze_allocation',
-      description:
-        'Return a short structured analysis of the portfolio: e.g. "heavy in tech", "no bonds", "concentrated in one region". Use this to give allocation advice.',
-      schema: z.object({}),
-      func: async () => {
+    ),
+    tool(
+      'analyze_allocation',
+      'Return a short structured analysis of the portfolio: e.g. "heavy in tech", "no bonds", "concentrated in one region". Use this to give allocation advice.',
+      async () => {
         try {
           const { holdings } = await services.portfolioService.getDetails({
             filters,
@@ -93,13 +101,11 @@ export function createAdvisorAgentTools(
           return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
       }
-    }),
-    new DynamicStructuredTool({
-      name: 'suggest_rebalance',
-      description:
-        'Get high-level rebalance suggestions: e.g. "consider adding bonds", "diversify regionally". Rule-of-thumb only; not personalized advice.',
-      schema: z.object({}),
-      func: async () => {
+    ),
+    tool(
+      'suggest_rebalance',
+      'Get high-level rebalance suggestions: e.g. "consider adding bonds", "diversify regionally". Rule-of-thumb only; not personalized advice.',
+      async () => {
         try {
           const { holdings } = await services.portfolioService.getDetails({
             filters,
@@ -127,6 +133,6 @@ export function createAdvisorAgentTools(
           return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
       }
-    })
+    )
   ];
 }

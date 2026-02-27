@@ -11,6 +11,13 @@ import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 
 const DEFAULT_DATA_SOURCE = DataSource.YAHOO;
+const emptySchema = z.object({});
+
+/** Avoids TS2589 (excessively deep instantiation) with DynamicStructuredTool + empty schema. */
+function tool(name: string, description: string, func: () => Promise<string>): DynamicStructuredTool {
+  // @ts-expect-error TS2589 - DynamicStructuredTool + z.object({}) causes excessively deep type instantiation
+  return new DynamicStructuredTool({ name, description, schema: emptySchema, func });
+}
 
 export interface DataAgentToolsContext {
   filters?: Filter[];
@@ -36,12 +43,10 @@ export function createDataAgentTools(
   const imp = impersonationId ?? '';
 
   return [
-    new DynamicStructuredTool({
-      name: 'get_holdings',
-      description:
-        'Get current portfolio holdings and allocation. Returns symbols, quantities, allocation percentages, and value in user currency.',
-      schema: z.object({}),
-      func: async () => {
+    tool(
+      'get_holdings',
+      'Get current portfolio holdings and allocation. Returns symbols, quantities, allocation percentages, and value in user currency.',
+      async () => {
         try {
           const { holdings } = await services.portfolioService.getDetails({
             filters,
@@ -61,7 +66,7 @@ export function createDataAgentTools(
           return `Error fetching holdings: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
       }
-    }),
+    ),
     new DynamicStructuredTool({
       name: 'get_portfolio_performance',
       description:
@@ -150,11 +155,10 @@ export function createDataAgentTools(
         }
       }
     }),
-    new DynamicStructuredTool({
-      name: 'list_accounts',
-      description: "List the user's accounts with name, platform, and activity count.",
-      schema: z.object({}),
-      func: async () => {
+    tool(
+      'list_accounts',
+      "List the user's accounts with name, platform, and activity count.",
+      async () => {
         try {
           const accounts = await services.accountService.getAccounts(userId);
           return JSON.stringify(
@@ -169,7 +173,7 @@ export function createDataAgentTools(
           return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
       }
-    }),
+    ),
     new DynamicStructuredTool({
       name: 'get_orders',
       description: 'Get orders/activities for the user. Optionally filter by date range or types.',
@@ -191,9 +195,9 @@ export function createDataAgentTools(
           const summary = activities.slice(0, take).map((a) => ({
             date: a.date,
             type: a.type,
-            symbol: a.symbol,
-            quantity: a.quantity,
-            unitPrice: a.unitPrice
+            symbol: (a as { symbol?: string }).symbol,
+            quantity: (a as { quantity?: number }).quantity,
+            unitPrice: (a as { unitPrice?: number }).unitPrice
           }));
           return JSON.stringify(summary);
         } catch (err) {
@@ -201,11 +205,10 @@ export function createDataAgentTools(
         }
       }
     }),
-    new DynamicStructuredTool({
-      name: 'get_account_balances',
-      description: 'Get account balances over time (historical balance data per account).',
-      schema: z.object({}),
-      func: async () => {
+    tool(
+      'get_account_balances',
+      'Get account balances over time (historical balance data per account).',
+      async () => {
         try {
           const { balances } = await services.accountBalanceService.getAccountBalances({
             userId,
@@ -226,6 +229,6 @@ export function createDataAgentTools(
           return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
       }
-    })
+    )
   ];
 }
