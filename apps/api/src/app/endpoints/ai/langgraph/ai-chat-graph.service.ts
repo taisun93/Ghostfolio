@@ -47,6 +47,24 @@ const COMPLIANCE_SYSTEM = `You are a compliance checker. You only output a JSON 
 - block: do not show the reply; set overrideMessage to a neutral refusal (e.g. "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.")
 Look for: money laundering, scams (e.g. "prince", "urgent wire", "send crypto"), or user being misled.`;
 
+/** High-risk phrases in user input: always block and return refusal (no LLM compliance call). */
+const COMPLIANCE_BLOCK_PATTERNS = [
+  /\b(prince|nigeria|wire\s+money|wire\s+funds)\b/i,
+  /\b(wire|transfer|send)\s+(money|funds|crypto|bitcoin)\s+(urgently|immediately|asap|now)\b/i,
+  /\burgent(ly)?\s+(wire|transfer|payment|send)\b/i,
+  /\b(wire|transfer)\s+.*\s+(urgently|secure\s+account)\b/i,
+  /\bsend\s+(crypto|bitcoin|money)\s+to\b/i
+];
+
+const COMPLIANCE_BLOCK_MESSAGE =
+  "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
+
+function shouldBlockByInput(userContent: string): boolean {
+  const text = (userContent || '').trim();
+  if (!text) return false;
+  return COMPLIANCE_BLOCK_PATTERNS.some((re) => re.test(text));
+}
+
 @Injectable()
 export class AiChatGraphService {
   public constructor(
@@ -288,6 +306,15 @@ export class AiChatGraphService {
         .find((m) => m._getType() === 'human');
       const userContent =
         typeof lastUser?.content === 'string' ? lastUser.content : '';
+
+      if (shouldBlockByInput(userContent)) {
+        return {
+          complianceDecision: 'block',
+          complianceMessage: COMPLIANCE_BLOCK_MESSAGE,
+          finalContent: COMPLIANCE_BLOCK_MESSAGE
+        };
+      }
+
       let decision: ComplianceDecision = 'approve';
       let complianceMessage: string | undefined;
       try {
