@@ -117,87 +117,15 @@ export class GfAppComponent implements OnDestroy, OnInit {
         this.hasImpersonationId = !!impersonationId;
       });
 
+    this.updateRouteFromUrl();
+
     this.router.events
-      .pipe(filter((event) => event instanceof NavigationEnd))
+      .pipe(
+        filter((event) => event instanceof NavigationEnd),
+        takeUntil(this.unsubscribeSubject)
+      )
       .subscribe(() => {
-        const urlTree = this.router.parseUrl(this.router.url);
-        const urlSegmentGroup = urlTree.root.children[PRIMARY_OUTLET];
-        const urlSegments = urlSegmentGroup.segments;
-        this.currentRoute = urlSegments[0].path;
-        this.currentSubRoute = urlSegments[1]?.path;
-
-        if (
-          ((this.currentRoute === internalRoutes.home.path &&
-            !this.currentSubRoute) ||
-            (this.currentRoute === internalRoutes.home.path &&
-              this.currentSubRoute ===
-                internalRoutes.home.subRoutes.holdings.path) ||
-            (this.currentRoute === internalRoutes.portfolio.path &&
-              !this.currentSubRoute)) &&
-          this.user?.settings?.viewMode !== 'ZEN'
-        ) {
-          this.hasPermissionToChangeDateRange = true;
-        } else {
-          this.hasPermissionToChangeDateRange = false;
-        }
-
-        if (
-          (this.currentRoute === internalRoutes.home.path &&
-            this.currentSubRoute ===
-              internalRoutes.home.subRoutes.holdings.path) ||
-          (this.currentRoute === internalRoutes.portfolio.path &&
-            !this.currentSubRoute) ||
-          (this.currentRoute === internalRoutes.portfolio.path &&
-            this.currentSubRoute ===
-              internalRoutes.portfolio.subRoutes.activities.path) ||
-          (this.currentRoute === internalRoutes.portfolio.path &&
-            this.currentSubRoute ===
-              internalRoutes.portfolio.subRoutes.allocations.path) ||
-          (this.currentRoute === internalRoutes.zen.path &&
-            this.currentSubRoute ===
-              internalRoutes.home.subRoutes.holdings.path)
-        ) {
-          this.hasPermissionToChangeFilters = true;
-        } else {
-          this.hasPermissionToChangeFilters = false;
-        }
-
-        this.hasTabs =
-          (this.currentRoute === publicRoutes.about.path ||
-            this.currentRoute === publicRoutes.faq.path ||
-            this.currentRoute === publicRoutes.resources.path ||
-            this.currentRoute === internalRoutes.account.path ||
-            this.currentRoute === internalRoutes.adminControl.path ||
-            this.currentRoute === internalRoutes.home.path ||
-            this.currentRoute === internalRoutes.portfolio.path ||
-            this.currentRoute === internalRoutes.zen.path) &&
-          this.deviceType !== 'mobile';
-
-        this.showFooter =
-          (this.currentRoute === publicRoutes.blog.path ||
-            this.currentRoute === publicRoutes.features.path ||
-            this.currentRoute === publicRoutes.markets.path ||
-            this.currentRoute === publicRoutes.openStartup.path ||
-            this.currentRoute === publicRoutes.public.path ||
-            this.currentRoute === publicRoutes.pricing.path ||
-            this.currentRoute === publicRoutes.register.path ||
-            this.currentRoute === publicRoutes.start.path) &&
-          this.deviceType !== 'mobile';
-
-        if (this.deviceType === 'mobile') {
-          setTimeout(() => {
-            const index = this.title.getTitle().indexOf('–');
-            const title =
-              index === -1
-                ? ''
-                : this.title.getTitle().substring(0, index).trim();
-            this.pageTitle = title.length <= 15 ? title : 'Ghostfolio';
-
-            this.changeDetectorRef.markForCheck();
-          });
-        }
-
-        this.changeDetectorRef.markForCheck();
+        this.updateRouteFromUrl();
       });
 
     this.userService.stateChanged
@@ -223,6 +151,87 @@ export class GfAppComponent implements OnDestroy, OnInit {
 
         this.changeDetectorRef.markForCheck();
       });
+  }
+
+  private updateRouteFromUrl() {
+    const urlTree = this.router.parseUrl(this.router.url);
+    const urlSegmentGroup = urlTree.root.children[PRIMARY_OUTLET];
+    const urlSegments = urlSegmentGroup?.segments ?? [];
+    this.currentRoute = urlSegments[0]?.path ?? '';
+    this.currentSubRoute = urlSegments[1]?.path;
+
+    if (
+      ((this.currentRoute === internalRoutes.home.path &&
+        !this.currentSubRoute) ||
+        (this.currentRoute === internalRoutes.home.path &&
+          this.currentSubRoute ===
+            internalRoutes.home.subRoutes.holdings.path) ||
+        (this.currentRoute === internalRoutes.portfolio.path &&
+          !this.currentSubRoute)) &&
+      this.user?.settings?.viewMode !== 'ZEN'
+    ) {
+      this.hasPermissionToChangeDateRange = true;
+    } else {
+      this.hasPermissionToChangeDateRange = false;
+    }
+
+    if (
+      (this.currentRoute === internalRoutes.home.path &&
+        this.currentSubRoute ===
+          internalRoutes.home.subRoutes.holdings.path) ||
+      (this.currentRoute === internalRoutes.portfolio.path &&
+        !this.currentSubRoute) ||
+      (this.currentRoute === internalRoutes.portfolio.path &&
+        this.currentSubRoute ===
+          internalRoutes.portfolio.subRoutes.activities.path) ||
+      (this.currentRoute === internalRoutes.portfolio.path &&
+        this.currentSubRoute ===
+          internalRoutes.portfolio.subRoutes.allocations.path) ||
+      (this.currentRoute === internalRoutes.zen.path &&
+        this.currentSubRoute ===
+          internalRoutes.home.subRoutes.holdings.path)
+    ) {
+      this.hasPermissionToChangeFilters = true;
+    } else {
+      this.hasPermissionToChangeFilters = false;
+    }
+
+    this.hasTabs =
+      (this.currentRoute === publicRoutes.about.path ||
+        this.currentRoute === publicRoutes.faq.path ||
+        this.currentRoute === publicRoutes.resources.path ||
+        this.currentRoute === internalRoutes.account.path ||
+        this.currentRoute === internalRoutes.adminControl.path ||
+        this.currentRoute === internalRoutes.home.path ||
+        this.currentRoute === internalRoutes.portfolio.path ||
+        this.currentRoute === internalRoutes.zen.path) &&
+      this.deviceType !== 'mobile';
+
+    this.showFooter =
+      (this.currentRoute === publicRoutes.blog.path ||
+        this.currentRoute === publicRoutes.features.path ||
+        this.currentRoute === publicRoutes.markets.path ||
+        this.currentRoute === publicRoutes.openStartup.path ||
+        this.currentRoute === publicRoutes.public.path ||
+        this.currentRoute === publicRoutes.pricing.path ||
+        this.currentRoute === publicRoutes.register.path ||
+        this.currentRoute === publicRoutes.start.path) &&
+      this.deviceType !== 'mobile';
+
+    if (this.deviceType === 'mobile') {
+      setTimeout(() => {
+        const index = this.title.getTitle().indexOf('–');
+        const title =
+          index === -1
+            ? ''
+            : this.title.getTitle().substring(0, index).trim();
+        this.pageTitle = title.length <= 15 ? title : 'Ghostfolio';
+
+        this.changeDetectorRef.markForCheck();
+      });
+    }
+
+    this.changeDetectorRef.markForCheck();
   }
 
   public onClickSystemMessage() {

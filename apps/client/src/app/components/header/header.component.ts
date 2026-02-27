@@ -80,8 +80,8 @@ export class GfHeaderComponent implements OnChanges {
       event.target?.nodeName?.toLowerCase() !== 'textarea' &&
       this.hasPermissionToAccessAssistant
     ) {
-      this.assistantElement.setIsOpen(true);
-      this.assistentMenuTriggerElement.openMenu();
+      this.assistantElement?.setIsOpen(true);
+      this.assistentMenuTriggerElement?.openMenu();
 
       event.preventDefault();
     }
@@ -214,6 +214,7 @@ export class GfHeaderComponent implements OnChanges {
   }
 
   public closeAssistant() {
+    this.assistantElement?.setIsOpen(false);
     this.assistentMenuTriggerElement?.closeMenu();
   }
 
@@ -282,7 +283,9 @@ export class GfHeaderComponent implements OnChanges {
   }
 
   public onOpenAssistant() {
-    this.assistantElement.initialize();
+    setTimeout(() => {
+      this.assistantElement?.initialize();
+    }, 0);
   }
 
   public onSignOut() {

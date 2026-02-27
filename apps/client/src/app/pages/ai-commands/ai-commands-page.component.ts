@@ -38,10 +38,17 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
 
   public errorMessage: string | null = null;
   public inputText = '';
-  public isLoadingHistory = true;
+  public isLoadingHistory = false;
   public isThinking = false;
-  public messages: ChatMessage[] = [];
-  private nextId = 0;
+  public messages: ChatMessage[] = [
+    {
+      id: 'msg-0',
+      role: 'assistant',
+      text: WELCOME_TEXT,
+      at: new Date()
+    }
+  ];
+  private nextId = 1;
 
   public constructor(private http: HttpClient) {}
 
@@ -143,17 +150,7 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
             at: new Date(m.at)
           }));
           this.nextId = this.messages.length + 1;
-        } else {
-          this.messages = [
-            {
-              id: `msg-${++this.nextId}`,
-              role: 'assistant',
-              text: WELCOME_TEXT,
-              at: new Date()
-            }
-          ];
         }
-        this.isLoadingHistory = false;
         this.scrollToBottom();
       });
   }
