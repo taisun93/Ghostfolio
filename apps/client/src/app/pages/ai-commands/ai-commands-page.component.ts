@@ -4,6 +4,7 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  NgZone,
   OnDestroy,
   OnInit,
   ViewChild
@@ -63,7 +64,8 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
 
   public constructor(
     private readonly changeDetectorRef: ChangeDetectorRef,
-    private readonly http: HttpClient
+    private readonly http: HttpClient,
+    private readonly ngZone: NgZone
   ) {}
 
   public ngOnInit() {
@@ -129,18 +131,26 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
       .post<{ content: string }>('/api/v1/ai/chat', { messages: messagesForApi })
       .pipe(
         catchError((err) => {
-          this.errorMessage = this.getErrorMessage(err);
+          this.ngZone.run(() => {
+            this.errorMessage = this.getErrorMessage(err);
+          });
           return of(null);
         })
       )
       .subscribe((res) => {
-        this.isThinking = false;
-        if (res?.content != null) {
-          this.addAssistantMessage(res.content);
-          this.persistMessage('assistant', res.content);
-        }
-        this.scrollToBottom();
-        this.changeDetectorRef.detectChanges();
+        const content = res?.content != null ? res.content : null;
+        // Run in NgZone + defer to next tick so UI updates reliably (avoids "only updates when DevTools open").
+        this.ngZone.run(() => {
+          setTimeout(() => {
+            this.isThinking = false;
+            if (content != null) {
+              this.addAssistantMessage(content);
+              this.persistMessage('assistant', content);
+            }
+            this.scrollToBottom();
+            this.changeDetectorRef.detectChanges();
+          }, 0);
+        });
       });
   }
 
