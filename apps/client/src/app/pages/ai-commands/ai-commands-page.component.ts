@@ -9,11 +9,15 @@ import { MatInputModule } from '@angular/material/input';
 import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
+import { parrotResponse } from './parrot-agent';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   at: Date;
+  /** True for the quick parrot reply; excluded from API context */
+  isParrot?: boolean;
 }
 
 const WELCOME_TEXT = $localize`Hi. I'm your portfolio assistant. Ask about your holdings, allocation, or anything else—I'll use your portfolio data when relevant.`;
@@ -92,12 +96,21 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
     this.inputText = '';
     this.addUserMessage(text);
     this.persistMessage('user', text);
+
+    // First response: quick parrot rephrasing for perceived responsiveness
+    const parrotText = parrotResponse(text);
+    this.addAssistantMessage(parrotText, true);
+    this.persistMessage('assistant', parrotText);
+
     this.isThinking = true;
 
-    const messagesForApi = this.messages.map((m) => ({
-      role: m.role,
-      content: m.text
-    }));
+    // Only send user and non-parrot assistant messages to the API
+    const messagesForApi = this.messages
+      .filter((m) => !m.isParrot)
+      .map((m) => ({
+        role: m.role,
+        content: m.text
+      }));
 
     this.http
       .post<{ content: string }>('/api/v1/ai/chat', { messages: messagesForApi })
@@ -172,12 +185,13 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
     this.scrollToBottom();
   }
 
-  private addAssistantMessage(text: string) {
+  private addAssistantMessage(text: string, isParrot = false) {
     this.messages.push({
       id: `msg-${++this.nextId}`,
       role: 'assistant',
       text,
-      at: new Date()
+      at: new Date(),
+      ...(isParrot && { isParrot: true })
     });
     this.scrollToBottom();
   }
