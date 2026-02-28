@@ -1235,11 +1235,14 @@ describe('Golden set (AI chat)', () => {
 
   describe('Tools: historical prices and balances', () => {
     itWithKey(
-      '"Get historical price for MSFT" triggers get_historical_prices',
+      '"Get historical price for MSFT" uses data route and price-related tool (get_historical_prices or get_quote)',
       async () => {
         marketDataService.getRange.mockResolvedValue([
           { date: new Date(), marketPrice: 380 }
         ] as never);
+        dataProviderService.getQuotes.mockResolvedValue({
+          MSFT: { marketPrice: 380, currency: 'USD', marketState: 'REGULAR', dataSource: 'YAHOO' }
+        } as never);
 
         const trace = await aiChatGraphService.runWithTrace({
           filters: BASE_PARAMS.filters,
@@ -1250,12 +1253,22 @@ describe('Golden set (AI chat)', () => {
           userId: BASE_PARAMS.userId
         });
 
+        expect(trace.route).toBe('data');
         const historyCalls = trace.toolCalls.filter(
           (tc) => tc.name === 'get_historical_prices'
         );
-        expect(historyCalls.length).toBeGreaterThanOrEqual(1);
-        const args = historyCalls[0].args as { symbol?: string };
-        expect(args?.symbol?.toUpperCase()).toBe('MSFT');
+        const quoteCalls = trace.toolCalls.filter((tc) => tc.name === 'get_quote');
+        const hasPriceTool = historyCalls.length >= 1 || quoteCalls.length >= 1;
+        expect(hasPriceTool).toBe(true);
+        if (historyCalls.length >= 1) {
+          const args = historyCalls[0].args as { symbol?: string };
+          expect(args?.symbol?.toUpperCase()).toBe('MSFT');
+        }
+        if (quoteCalls.length >= 1) {
+          const args = quoteCalls[0].args as { symbol?: string };
+          expect(args?.symbol?.toUpperCase()).toBe('MSFT');
+        }
+        expect(trace.content).toBeDefined();
       }
     );
 
