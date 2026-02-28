@@ -59,11 +59,15 @@ const COMPLIANCE_BLOCK_PATTERNS = [
 const COMPLIANCE_BLOCK_MESSAGE =
   "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
 
-function shouldBlockByInput(userContent: string): boolean {
+/** Exported for tests. Returns true when user input matches high-risk scam/fraud patterns (always block, no LLM call). */
+export function shouldBlockByInput(userContent: string): boolean {
   const text = (userContent || '').trim();
   if (!text) return false;
   return COMPLIANCE_BLOCK_PATTERNS.some((re) => re.test(text));
 }
+
+/** Max time for the full graph (router + agent + compliance). Prevents runaway requests. */
+const GRAPH_TIMEOUT_MS = 55_000;
 
 @Injectable()
 export class AiChatGraphService {
@@ -165,7 +169,16 @@ export class AiChatGraphService {
       userId
     };
     type InvokeInput = Parameters<typeof graph.invoke>[0];
-    return graph.invoke(initialState as unknown as InvokeInput) as Promise<ChatGraphState>;
+    const invokePromise = graph.invoke(
+      initialState as unknown as InvokeInput
+    ) as Promise<ChatGraphState>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(
+        () => reject(new Error('AI request timed out. Please try a shorter question.')),
+        GRAPH_TIMEOUT_MS
+      );
+    });
+    return Promise.race([invokePromise, timeoutPromise]);
   }
 
   private buildGraph(openAiKey: string) {

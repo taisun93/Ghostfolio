@@ -18,7 +18,12 @@ import type { PortfolioPosition } from '@ghostfolio/common/interfaces';
 
 import { HumanMessage } from '@langchain/core/messages';
 
-import { AiChatGraphService } from './langgraph/ai-chat-graph.service';
+import { createAdvisorAgentTools } from './langgraph/tools/advisor-agent.tools';
+import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
+import {
+  AiChatGraphService,
+  shouldBlockByInput
+} from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
 
 jest.mock('@ghostfolio/api/app/account-balance/account-balance.service', () => ({
@@ -1422,5 +1427,82 @@ describe('Golden set (AI chat)', () => {
         expect(hasPerfOrHoldings).toBe(true);
       }
     );
+  });
+
+  describe('Broken flows / reliability (CI-safe, no API key)', () => {
+    it('compliance input block: blocks known scam/fraud phrases', () => {
+      expect(shouldBlockByInput('wire money to a prince in Nigeria')).toBe(true);
+      expect(shouldBlockByInput('Send crypto urgently to this address')).toBe(
+        true
+      );
+      expect(shouldBlockByInput('I need to wire funds immediately')).toBe(
+        true
+      );
+      expect(shouldBlockByInput('Transfer money urgently to secure account')).toBe(
+        true
+      );
+    });
+
+    it('compliance input block: allows normal portfolio questions', () => {
+      expect(shouldBlockByInput("What's my allocation?")).toBe(false);
+      expect(shouldBlockByInput('Should I rebalance?')).toBe(false);
+      expect(shouldBlockByInput('Hi')).toBe(false);
+      expect(shouldBlockByInput('')).toBe(false);
+    });
+
+    it('data agent get_holdings returns Error string when portfolio service throws', async () => {
+      const mockPortfolio = {
+        getDetails: jest.fn().mockRejectedValue(new Error('DB unavailable'))
+      };
+      const tools = createDataAgentTools(
+        {
+          accountBalanceService: accountBalanceService as unknown as AccountBalanceService,
+          accountService: accountService as unknown as AccountService,
+          dataProviderService: dataProviderService as unknown as DataProviderService,
+          marketDataService: marketDataService as unknown as MarketDataService,
+          orderService: orderService as unknown as OrderService,
+          portfolioService: mockPortfolio as unknown as PortfolioService
+        },
+        {
+          userCurrency: 'USD',
+          userId: 'test-user'
+        }
+      );
+      const getHoldings = tools.find((t) => t.name === 'get_holdings');
+      expect(getHoldings).toBeDefined();
+      const result = await getHoldings!.invoke({});
+      expect(result).toMatch(/^Error:/);
+      expect(result).toContain('DB unavailable');
+    });
+
+    it('advisor agent get_allocation_summary returns Error string when portfolio service throws', async () => {
+      const mockPortfolio = {
+        getDetails: jest.fn().mockRejectedValue(new Error('Service down'))
+      };
+      const tools = createAdvisorAgentTools(
+        { portfolioService: mockPortfolio as unknown as PortfolioService },
+        { userCurrency: 'USD', userId: 'test-user' }
+      );
+      const getAlloc = tools.find((t) => t.name === 'get_allocation_summary');
+      expect(getAlloc).toBeDefined();
+      const result = await getAlloc!.invoke({});
+      expect(result).toMatch(/^Error:/);
+      expect(result).toContain('Service down');
+    });
+
+    it('AiChatService.chat throws with clear message when graph fails', async () => {
+      propertyService.getByKey.mockResolvedValue('fake-key');
+      const runSpy = jest
+        .spyOn(aiChatGraphService, 'run')
+        .mockRejectedValueOnce(new Error('OpenAI rate limit'));
+
+      await expect(
+        aiChatService.chat({
+          ...BASE_PARAMS,
+          messages: [{ role: 'user', content: 'Hello' }]
+        })
+      ).rejects.toThrow(/AI chat|failed|OpenAI/);
+      runSpy.mockRestore();
+    });
   });
 });

@@ -1,6 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  ViewChild
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -54,7 +61,10 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
   ];
   private nextId = 1;
 
-  public constructor(private http: HttpClient) {}
+  public constructor(
+    private readonly changeDetectorRef: ChangeDetectorRef,
+    private readonly http: HttpClient
+  ) {}
 
   public ngOnInit() {
     this.loadHistory();
@@ -80,6 +90,9 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
       }
       if (e.status === 503) {
         return $localize`Service unavailable. Set OPENAI_API_KEY in your Vercel project environment (or API key in Ghostfolio settings).`;
+      }
+      if (e.status === 504) {
+        return $localize`Request timed out. Please try a shorter message or try again.`;
       }
       if (e.status && e.status >= 400) {
         return $localize`Request failed (${e.status}). Check the API key and try again.`;
@@ -127,6 +140,7 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
           this.persistMessage('assistant', res.content);
         }
         this.scrollToBottom();
+        this.changeDetectorRef.detectChanges();
       });
   }
 

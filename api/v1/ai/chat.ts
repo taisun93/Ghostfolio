@@ -4,11 +4,16 @@
  * Returns: { content: string }
  * Requires Bearer token in Authorization (passed through; optional validation).
  * Set OPENAI_API_KEY or API_KEY_OPENAI in Vercel env.
+ *
+ * Note: This edge route does NOT use the full LangGraph pipeline (no portfolio tools, no compliance).
+ * For production with tools, use the Nest backend which serves POST /api/v1/ai/chat with the full pipeline.
  */
 export const config = { runtime: 'edge' };
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_MESSAGES = 20;
 
 interface Message {
   role: string;
@@ -58,10 +63,14 @@ export async function POST(req: Request) {
   }
 
   const raw = Array.isArray(body.messages) ? body.messages : [];
-  const messages = raw.filter(isMessage).map((m) => ({
+  const allMessages = raw.filter(isMessage).map((m) => ({
     role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
     content: m.content
   }));
+  const messages =
+    allMessages.length > MAX_MESSAGES
+      ? allMessages.slice(-MAX_MESSAGES)
+      : allMessages;
 
   if (messages.length === 0) {
     return new Response(
@@ -70,9 +79,13 @@ export async function POST(req: Request) {
     );
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   try {
     const res = await fetch(OPENAI_CHAT_URL, {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
@@ -84,6 +97,8 @@ export async function POST(req: Request) {
         temperature: 0.2
       })
     });
+
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       const err = await res.text();
@@ -107,10 +122,17 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Request failed';
-    return new Response(
-      JSON.stringify({ message }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    clearTimeout(timeoutId);
+    const isAbort = err instanceof Error && err.name === 'AbortError';
+    const message = isAbort
+      ? 'Request timed out. Please try again.'
+      : err instanceof Error
+        ? err.message
+        : 'Request failed';
+    const status = isAbort ? 504 : 500;
+    return new Response(JSON.stringify({ message }), {
+      status,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
