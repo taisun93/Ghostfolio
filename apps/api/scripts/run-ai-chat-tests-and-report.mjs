@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
- * Run the AI chat golden set tests and write results to
+ * Run AI chat golden set + Finance tools tests and write results to
  * src/app/endpoints/ai/AI_CHAT_TEST_RESULTS_10.md
  *
+ * Runs both:
+ *   - src/app/endpoints/ai/ai-chat.service.spec.ts (AI chat)
+ *   - src/app/tools/tools.service.spec.ts (Finance tools)
+ *
  * Usage: from repo root or apps/api:
- *   node apps/api/scripts/run-ai-chat-tests-and-report.mjs
+ *   npx dotenv-cli -e .env.example -- node apps/api/scripts/run-ai-chat-tests-and-report.mjs
  *   cd apps/api && node scripts/run-ai-chat-tests-and-report.mjs
  */
 import { execSync, spawnSync } from 'child_process';
@@ -25,6 +29,7 @@ const quick = process.env.QUICK === '1' || process.env.QUICK === 'true';
 const jestArgs = [
   'jest',
   'src/app/endpoints/ai/ai-chat.service.spec.ts',
+  'src/app/tools/tools.service.spec.ts',
   '--no-cache',
   '--verbose'
 ];
@@ -106,7 +111,15 @@ function statusLabel(s) {
 
 function buildMarkdown(quickMode = false) {
   const lines = [];
-  lines.push('# AI Chat Golden Set Test Results (10 tests)');
+  const allResults = data?.testResults ?? [];
+  const flatAssertions = allResults.flatMap((suite) => {
+    const file = suite.name ?? '';
+    const shortName = path.basename(file);
+    return (suite.assertionResults || []).map((a) => ({ ...a, _suite: shortName }));
+  });
+  const totalTests = flatAssertions.length;
+  const testCountLabel = totalTests > 0 ? ` (${totalTests} tests)` : '';
+  lines.push(`# AI Chat + Tools Test Results${testCountLabel}`);
   lines.push('');
   lines.push('## Status');
   lines.push('');
@@ -132,20 +145,17 @@ function buildMarkdown(quickMode = false) {
     return lines.join('\n');
   }
 
-  const suite = data.testResults[0];
-  const assertions = suite.assertionResults || [];
-  const suiteMessage = suite.message || '';
-
-  if (assertions.length === 0 && (suiteMessage || exitCode !== 0)) {
+  const anyMessage = allResults.map((s) => s.message).filter(Boolean).join('\n');
+  if (flatAssertions.length === 0 && (anyMessage || exitCode !== 0)) {
     lines.push('**Fail** — Suite failed to run or no tests executed.');
     lines.push('');
     lines.push(`Exit code: ${exitCode}`);
-    if (suiteMessage) {
+    if (anyMessage) {
       lines.push('');
       lines.push('## Errors');
       lines.push('');
       lines.push('```');
-      lines.push(suiteMessage.slice(0, 4000));
+      lines.push(anyMessage.slice(0, 4000));
       lines.push('```');
     }
     lines.push('');
@@ -154,37 +164,38 @@ function buildMarkdown(quickMode = false) {
     return lines.join('\n');
   }
 
-  const numPassed = data.numPassedTests ?? assertions.filter((a) => a.status === 'passed').length;
-  const numFailed = data.numFailedTests ?? assertions.filter((a) => a.status === 'failed').length;
-  const numPending = data.numPendingTests ?? assertions.filter((a) => a.status === 'pending' || a.status === 'skipped').length;
+  const numPassed = data.numPassedTests ?? flatAssertions.filter((a) => a.status === 'passed').length;
+  const numFailed = data.numFailedTests ?? flatAssertions.filter((a) => a.status === 'failed').length;
+  const numPending = data.numPendingTests ?? flatAssertions.filter((a) => a.status === 'pending' || a.status === 'skipped').length;
 
   let status = '**Pass**';
   if (numFailed > 0) status = '**Fail**';
   else if (numPending > 0 && numPassed > 0) status = '**Partial**';
   else if (numPassed === 0 && numPending > 0) status = '**Partial** (all LLM tests skipped if no OPENAI_API_KEY)';
 
-  lines.push(`${status} — ${data.numPassedTests ?? 0} passed, ${data.numFailedTests ?? 0} failed, ${data.numPendingTests ?? 0} skipped.`);
+  lines.push(`${status} — ${numPassed} passed, ${numFailed} failed, ${numPending} skipped.`);
   lines.push('');
   lines.push(`Exit code: ${exitCode}`);
   lines.push('');
   lines.push('## Tests run');
   lines.push('');
-  lines.push('| # | Describe block | Test | Result |');
-  lines.push('|---|----------------|------|--------|');
+  lines.push('| # | Suite | Describe block | Test | Result |');
+  lines.push('|---|-------|----------------|------|--------|');
 
-  assertions.forEach((a, i) => {
+  flatAssertions.forEach((a, i) => {
     const describeBlock = (a.ancestorTitles && a.ancestorTitles.length > 0) ? a.ancestorTitles[a.ancestorTitles.length - 1] : '';
     const result = statusLabel(a.status);
     const title = (a.title || '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
-    lines.push(`| ${i + 1} | ${describeBlock} | ${title} | ${result} |`);
+    const suiteName = a._suite ?? '';
+    lines.push(`| ${i + 1} | ${suiteName} | ${describeBlock} | ${title} | ${result} |`);
   });
 
-  const failures = assertions.filter((a) => a.status === 'failed' && a.failureMessages && a.failureMessages.length > 0);
+  const failures = flatAssertions.filter((a) => a.status === 'failed' && a.failureMessages && a.failureMessages.length > 0);
   if (failures.length > 0) {
     lines.push('');
     lines.push('## Errors');
     lines.push('');
-    failures.forEach((a, i) => {
+    failures.forEach((a) => {
       lines.push(`### ${(a.ancestorTitles || []).concat([a.title]).join(' > ')}`);
       lines.push('');
       const msg = (a.failureMessages || []).join('\n').slice(0, 2000);
@@ -197,8 +208,9 @@ function buildMarkdown(quickMode = false) {
 
   lines.push('## Notes');
   lines.push('');
-  lines.push('- **Command:** `npx jest src/app/endpoints/ai/ai-chat.service.spec.ts --no-cache` from `apps/api`.');
-  lines.push('- **Env:** Repo root `.env` is loaded in `test-setup.ts`; `OPENAI_API_KEY` or `API_KEY_OPENAI` is used for tests 4–10 when present.');
+  lines.push(`- **Scope:** \`ai-chat.service.spec.ts\` (AI chat) + \`tools.service.spec.ts\` (Finance tools). Total: ${totalTests} tests.`);
+  lines.push('- **Command:** `npx jest src/app/endpoints/ai/ai-chat.service.spec.ts src/app/tools/tools.service.spec.ts --no-cache` from `apps/api`.');
+  lines.push('- **Env:** Repo root `.env` is loaded in `test-setup.ts`; `OPENAI_API_KEY` or `API_KEY_OPENAI` is used for AI chat LLM tests when present.');
   lines.push('- To regenerate: `npm run test:ai-chat:report` (from repo root). If you see out-of-memory locally, run the **AI Chat Test Report** workflow from the Actions tab (runs with 8GB heap on GitHub).');
   if (quickMode) {
     lines.push('- **Quick run:** only Config and Input tests were run (set `QUICK=1` for this).');
