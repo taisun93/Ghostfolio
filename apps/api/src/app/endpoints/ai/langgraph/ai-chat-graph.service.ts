@@ -159,12 +159,16 @@ export class AiChatGraphService {
     userCurrency: string;
     userId: string;
   }): Promise<ChatGraphState> {
+    const useDummyData =
+      process.env['AI_CHAT_DUMMY_DATA'] !== 'false' &&
+      process.env['AI_CHAT_DUMMY_DATA'] !== '0';
     const graph = this.buildGraph(openAiKey);
     const initialState: Partial<ChatGraphState> = {
       filters,
       finalContent: '',
       impersonationId,
       messages,
+      useDummyData,
       userCurrency,
       userId
     };
@@ -262,6 +266,7 @@ export class AiChatGraphService {
       const tools = createDataAgentTools(services, {
         filters: state.filters,
         impersonationId: state.impersonationId,
+        useDummyData: state.useDummyData,
         userCurrency: state.userCurrency,
         userId: state.userId
       });
@@ -283,6 +288,7 @@ export class AiChatGraphService {
         {
           filters: state.filters,
           impersonationId: state.impersonationId,
+          useDummyData: state.useDummyData,
           userCurrency: state.userCurrency,
           userId: state.userId
         }

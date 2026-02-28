@@ -13,6 +13,47 @@ import { z } from 'zod';
 const DEFAULT_DATA_SOURCE = DataSource.YAHOO;
 const emptySchema = z.object({});
 
+/** Stub data when useDummyData is true so agents can call tools without real backend. */
+const DUMMY = {
+  get_holdings: (currency: string) =>
+    `Holdings (base ${currency}):\nAAPL 55.00% USD EQUITY \nMSFT 30.00% USD EQUITY \nGOOGL 15.00% USD EQUITY`,
+  get_portfolio_performance: () =>
+    JSON.stringify({
+      netPerformance: 1250,
+      netPerformancePercentage: 8.5,
+      totalInvestment: 15000,
+      currentNetWorth: 16250
+    }),
+  get_quote: (symbol: string) =>
+    JSON.stringify({
+      symbol,
+      marketPrice: symbol === 'AAPL' ? 175 : symbol === 'MSFT' ? 380 : 140,
+      currency: 'USD',
+      marketState: 'REGULAR'
+    }),
+  get_historical_prices: (symbol: string) =>
+    JSON.stringify([
+      { date: '2024-01-15', marketPrice: 165 },
+      { date: '2024-02-15', marketPrice: 170 },
+      { date: '2024-03-15', marketPrice: 175 }
+    ]),
+  list_accounts: () =>
+    JSON.stringify([
+      { id: 'acc-1', name: 'Brokerage', platform: 'Interactive Brokers', activitiesCount: 12 },
+      { id: 'acc-2', name: 'IRA', platform: 'Fidelity', activitiesCount: 5 }
+    ]),
+  get_orders: () =>
+    JSON.stringify([
+      { date: '2024-03-01', type: 'BUY', symbol: 'AAPL', quantity: 10, unitPrice: 172 },
+      { date: '2024-02-15', type: 'BUY', symbol: 'MSFT', quantity: 5, unitPrice: 375 }
+    ]),
+  get_account_balances: () =>
+    JSON.stringify({
+      'acc-1': [{ date: '2024-03-01', valueInBaseCurrency: 10000 }],
+      'acc-2': [{ date: '2024-03-01', valueInBaseCurrency: 6250 }]
+    })
+};
+
 /** Avoids TS2589 (excessively deep instantiation) with DynamicStructuredTool + empty schema. */
 function tool(name: string, description: string, func: () => Promise<string>): DynamicStructuredTool {
   // @ts-expect-error TS2589 - DynamicStructuredTool + z.object({}) causes excessively deep type instantiation
@@ -33,6 +74,7 @@ function structuredTool<Schema extends z.ZodObject<z.ZodRawShape>>(config: {
 export interface DataAgentToolsContext {
   filters?: Filter[];
   impersonationId?: string;
+  useDummyData?: boolean;
   userCurrency: string;
   userId: string;
 }
@@ -50,7 +92,7 @@ export function createDataAgentTools(
   services: DataAgentToolsServices,
   ctx: DataAgentToolsContext
 ): DynamicStructuredTool[] {
-  const { filters, impersonationId, userCurrency, userId } = ctx;
+  const { filters, impersonationId, useDummyData, userCurrency, userId } = ctx;
   const imp = impersonationId ?? '';
 
   return [
@@ -58,6 +100,7 @@ export function createDataAgentTools(
       'get_holdings',
       'Get current portfolio holdings and allocation. Returns symbols, quantities, allocation percentages, and value in user currency.',
       async () => {
+        if (useDummyData) return DUMMY.get_holdings(userCurrency);
         try {
           const { holdings } = await services.portfolioService.getDetails({
             filters,
@@ -90,6 +133,7 @@ export function createDataAgentTools(
           .describe('Time range for performance')
       }),
       func: async ({ dateRange = 'max' }) => {
+        if (useDummyData) return DUMMY.get_portfolio_performance();
         try {
           const perf = await services.portfolioService.getPerformance({
             dateRange,
@@ -117,6 +161,7 @@ export function createDataAgentTools(
         dataSource: z.string().optional().nullable().describe('DataSource e.g. YAHOO')
       }),
       func: async ({ symbol, dataSource }) => {
+        if (useDummyData) return DUMMY.get_quote(symbol);
         try {
           const ds =
             dataSource && Object.values(DataSource).includes(dataSource as DataSource)
@@ -149,6 +194,7 @@ export function createDataAgentTools(
         endDate: z.string().optional().nullable().describe('YYYY-MM-DD')
       }),
       func: async ({ symbol, dataSource, startDate, endDate }) => {
+        if (useDummyData) return DUMMY.get_historical_prices(symbol);
         try {
           const ds =
             dataSource && Object.values(DataSource).includes(dataSource as DataSource)
@@ -171,6 +217,7 @@ export function createDataAgentTools(
       'list_accounts',
       "List the user's accounts with name, platform, and activity count.",
       async () => {
+        if (useDummyData) return DUMMY.list_accounts();
         try {
           const accounts = await services.accountService.getAccounts(userId);
           return JSON.stringify(
@@ -195,6 +242,7 @@ export function createDataAgentTools(
         take: z.number().optional().nullable().describe('Max number of orders to return')
       }),
       func: async ({ startDate, endDate, take = 50 }) => {
+        if (useDummyData) return DUMMY.get_orders();
         try {
           const { activities } = await services.orderService.getOrders({
             userId,
@@ -221,6 +269,7 @@ export function createDataAgentTools(
       'get_account_balances',
       'Get account balances over time (historical balance data per account).',
       async () => {
+        if (useDummyData) return DUMMY.get_account_balances();
         try {
           const { balances } = await services.accountBalanceService.getAccountBalances({
             userId,

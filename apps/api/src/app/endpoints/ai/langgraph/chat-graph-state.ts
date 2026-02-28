@@ -62,6 +62,10 @@ export const ChatGraphStateAnnotation = Annotation.Root({
     reducer: (_, right) => (right !== undefined ? right : ''),
     default: () => ''
   }),
+  useDummyData: Annotation<boolean>({
+    reducer: replace,
+    default: () => false
+  }),
   userCurrency: Annotation<string>({
     reducer: (_, right) => (right !== undefined ? right : ''),
     default: () => ''

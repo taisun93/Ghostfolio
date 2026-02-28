@@ -7,6 +7,7 @@ import { z } from 'zod';
 export interface AdvisorAgentToolsContext {
   filters?: Filter[];
   impersonationId?: string;
+  useDummyData?: boolean;
   userCurrency: string;
   userId: string;
 }
@@ -19,6 +20,30 @@ export interface AdvisorAgentToolsServices {
  * High-level allocation summary by asset class for advice context.
  */
 const emptySchema = z.object({});
+
+/** Stub data when useDummyData is true so agents can call tools without real backend. */
+const DUMMY = {
+  get_allocation_summary: (currency: string) =>
+    JSON.stringify({
+      byAssetClass: { EQUITY: 1.0 },
+      totalValueInBaseCurrency: 16250,
+      currency
+    }),
+  analyze_allocation: () =>
+    JSON.stringify({
+      topHoldings: [
+        { symbol: 'AAPL', allocationPercent: 55, assetClass: 'EQUITY', assetSubClass: null },
+        { symbol: 'MSFT', allocationPercent: 30, assetClass: 'EQUITY', assetSubClass: null },
+        { symbol: 'GOOGL', allocationPercent: 15, assetClass: 'EQUITY', assetSubClass: null }
+      ],
+      assetClasses: ['EQUITY'],
+      hasBonds: false,
+      hasLiquidity: false,
+      concentrationWarning: 'Portfolio is concentrated in a single holding.'
+    }),
+  suggest_rebalance: () =>
+    'Consider adding fixed income for diversification. Consider keeping some liquidity for emergencies.'
+};
 
 /** Build a no-arg tool; cast avoids TS2589 (excessively deep instantiation) with DynamicStructuredTool. */
 function tool(
@@ -34,7 +59,7 @@ export function createAdvisorAgentTools(
   services: AdvisorAgentToolsServices,
   ctx: AdvisorAgentToolsContext
 ): DynamicStructuredTool[] {
-  const { filters, impersonationId, userCurrency, userId } = ctx;
+  const { filters, impersonationId, useDummyData, userCurrency, userId } = ctx;
   const imp = impersonationId ?? '';
 
   return [
@@ -42,6 +67,7 @@ export function createAdvisorAgentTools(
       'get_allocation_summary',
       'Get high-level allocation summary: allocation by asset class (equity, fixed income, liquidity, etc.) and optionally by region. Use for diversification and risk context.',
       async () => {
+        if (useDummyData) return DUMMY.get_allocation_summary(userCurrency);
         try {
           const { holdings, summary } = await services.portfolioService.getDetails({
             filters,
@@ -69,6 +95,7 @@ export function createAdvisorAgentTools(
       'analyze_allocation',
       'Return a short structured analysis of the portfolio: e.g. "heavy in tech", "no bonds", "concentrated in one region". Use this to give allocation advice.',
       async () => {
+        if (useDummyData) return DUMMY.analyze_allocation();
         try {
           const { holdings } = await services.portfolioService.getDetails({
             filters,
@@ -106,6 +133,7 @@ export function createAdvisorAgentTools(
       'suggest_rebalance',
       'Get high-level rebalance suggestions: e.g. "consider adding bonds", "diversify regionally". Rule-of-thumb only; not personalized advice.',
       async () => {
+        if (useDummyData) return DUMMY.suggest_rebalance();
         try {
           const { holdings } = await services.portfolioService.getDetails({
             filters,

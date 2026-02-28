@@ -18,6 +18,10 @@ Production-ready AI chat: LangGraph multi-agent pipeline with portfolio tools, c
 
 For production with portfolio tools and compliance, use the Nest backend. The edge route is documented in-code as a fallback without tools.
 
+## Dummy data
+
+When `AI_CHAT_DUMMY_DATA` is not set or is any value other than `false`/`0`, all tools return stub data (sample holdings, accounts, performance, quotes, allocation, rebalance suggestions). Agents still call the same tools; no real portfolio or market services are used. Set `AI_CHAT_DUMMY_DATA=false` to use real backend data.
+
 ## Tests
 
 - **CI-safe (no `OPENAI_API_KEY`)**: Config (no key, empty key), empty messages, compliance input block (`shouldBlockByInput`), tool error handling (data/advisor tools return `Error:` when services throw), and service failure (graph throws → chat throws with clear message). See `ai-chat.service.spec.ts` → "Broken flows / reliability (CI-safe, no API key)".
