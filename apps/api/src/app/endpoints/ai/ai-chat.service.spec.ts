@@ -541,14 +541,15 @@ describe('Golden set (AI chat)', () => {
     );
 
     itWithKey(
-      '"how much money i got" response content starts with router chirp and is from data agent',
+      '"how much money i got" response has chirp (data agent) and content is not generic refusal',
       async () => {
         propertyService.getByKey.mockResolvedValue(getOpenAiKey());
         const result = await aiChatService.chat({
           ...BASE_PARAMS,
           messages: [{ role: 'user', content: 'how much money i got' }]
         });
-        expect(result.content).toMatch(/Let me ask the data agent about your question\./);
+        expect(result.chirp).toBeDefined();
+        expect(result.chirp).toMatch(/data agent/i);
         expect(result.content).not.toMatch(
           /unable to access personal financial|I'm unable to access|I can't (access|tell|see) (your )?financial/i
         );

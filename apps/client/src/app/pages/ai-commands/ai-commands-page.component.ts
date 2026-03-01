@@ -128,7 +128,9 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
       }));
 
     this.http
-      .post<{ content: string }>('/api/v1/ai/chat', { messages: messagesForApi })
+      .post<{ chirp?: string; content: string }>('/api/v1/ai/chat', {
+        messages: messagesForApi
+      })
       .pipe(
         catchError((err) => {
           this.ngZone.run(() => {
@@ -138,14 +140,20 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
         })
       )
       .subscribe((res) => {
-        const content = res?.content != null ? res.content : null;
         // Run in NgZone + defer to next tick so UI updates reliably (avoids "only updates when DevTools open").
         this.ngZone.run(() => {
           setTimeout(() => {
             this.isThinking = false;
-            if (content != null) {
-              this.addAssistantMessage(content);
-              this.persistMessage('assistant', content);
+            if (res != null) {
+              // Order: parrot (already shown) → chirp → big answer
+              if (res.chirp != null && res.chirp.trim() !== '') {
+                this.addAssistantMessage(res.chirp);
+                this.persistMessage('assistant', res.chirp);
+              }
+              if (res.content != null && res.content.trim() !== '') {
+                this.addAssistantMessage(res.content);
+                this.persistMessage('assistant', res.content);
+              }
             }
             this.scrollToBottom();
             this.changeDetectorRef.detectChanges();

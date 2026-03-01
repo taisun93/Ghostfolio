@@ -112,7 +112,7 @@ export class AiChatGraphService {
     openAiKey: string;
     userCurrency: string;
     userId: string;
-  }): Promise<string> {
+  }): Promise<{ chirp?: string; content: string }> {
     const result = await this.invokeGraph({
       filters,
       impersonationId,
@@ -121,7 +121,10 @@ export class AiChatGraphService {
       userCurrency,
       userId
     });
-    return result.finalContent ?? '';
+    return {
+      chirp: result.routerChirp,
+      content: result.finalContent ?? ''
+    };
   }
 
   /**
@@ -393,20 +396,16 @@ export class AiChatGraphService {
       } catch {
         decision = 'approve';
       }
-      let mainContent: string;
+      let finalContent: string;
       if (decision === 'block') {
-        mainContent =
+        finalContent =
           complianceMessage ||
           "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
       } else if (decision === 'warn') {
-        mainContent = draftReply + (complianceMessage ? `\n\n${complianceMessage}` : '');
+        finalContent = draftReply + (complianceMessage ? `\n\n${complianceMessage}` : '');
       } else {
-        mainContent = draftReply;
+        finalContent = draftReply;
       }
-      const finalContent =
-        state.routerChirp != null && state.routerChirp !== ''
-          ? `${state.routerChirp}\n\n${mainContent}`
-          : mainContent;
       return {
         complianceDecision: decision,
         complianceMessage,

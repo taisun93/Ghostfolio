@@ -31,7 +31,7 @@ export class AiChatService {
     messages: ChatMessageInput[];
     userCurrency: string;
     userId: string;
-  }): Promise<{ content: string }> {
+  }): Promise<{ chirp?: string; content: string }> {
     const openAiKey = await this.propertyService.getByKey<string>(
       PROPERTY_API_KEY_OPENAI
     );
@@ -48,7 +48,7 @@ export class AiChatService {
     }
 
     try {
-      const finalContent = await this.aiChatGraphService.run({
+      const { chirp, content } = await this.aiChatGraphService.run({
         filters,
         impersonationId,
         messages: langchainMessages,
@@ -56,7 +56,7 @@ export class AiChatService {
         userCurrency,
         userId
       });
-      return { content: finalContent };
+      return chirp != null && chirp !== '' ? { chirp, content } : { content };
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'OpenAI request failed';
