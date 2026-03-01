@@ -102,6 +102,7 @@ export async function POST(req: Request) {
 
     if (!res.ok) {
       const err = await res.text();
+      console.log('[OpenAI] chat error', res.status, err.slice(0, 500));
       return new Response(
         JSON.stringify({
           message: `OpenAI API error: ${res.status}. ${err.slice(0, 200)}`
@@ -113,6 +114,7 @@ export async function POST(req: Request) {
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
+    console.log('[OpenAI] chat response', JSON.stringify(data));
     const content =
       data.choices?.[0]?.message?.content?.trim() ??
       '';

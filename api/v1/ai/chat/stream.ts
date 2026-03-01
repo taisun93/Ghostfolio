@@ -6,6 +6,9 @@
  * Requires Bearer token in Authorization. Set OPENAI_API_KEY or API_KEY_OPENAI in Vercel env.
  *
  * Pipeline: router call to get chirp (data/advice/general agent), then one OpenAI completion.
+ * NOTE: This edge route has NO portfolio tools, NO data agent, and NO compliance gate. For "how much
+ * money do I have" etc. the model has no account data, so it often refuses. We replace that refusal
+ * with a fallback message and suggest using the Ghostfolio API backend for full features.
  */
 export const config = { runtime: 'edge' };
 
@@ -72,6 +75,13 @@ function sendSSE(
     )
   );
 }
+
+/** Refusal phrases we never show (match Nest REFUSAL_WHEN_HAVING_DATA + IDK_OR_NON_ANSWER). */
+const REFUSAL_OR_IDK =
+  /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?(personal )?financial|don't have access to (your )?(personal )?(account|portfolio|financial)|(I'm sorry,?\s*)?(I don't have|I do not have) access to (personal )?financial|check your bank (account|statements)|log into your (online )?banking|to find out how much money you have|check your (bank |investment )?account|I don't know|I do not know|I'm not sure|I am not sure|I don't have (that )?information|I (can't|cannot) (tell|provide|say|help with that)|I'm (unable|not able) to (tell|provide|say)|I (don't|do not) have (access to )?(that )?data|no (information|data) (available|to share)/i;
+
+const EDGE_FALLBACK_NO_DATA =
+  "This chat doesn't have access to your portfolio. For answers like \"How much money do I have?\" or \"What's my allocation?\", use Ghostfolio with the API backend (self-hosted or with backend deployed). Here you can ask general questions.";
 
 export async function POST(req: Request) {
   if (req.method !== 'POST') {
@@ -169,6 +179,7 @@ export async function POST(req: Request) {
             const routerData = (await routerRes.json()) as {
               choices?: Array<{ message?: { content?: string } }>;
             };
+            console.log('[OpenAI] router response', JSON.stringify(routerData));
             const text =
               routerData.choices?.[0]?.message?.content?.trim() ?? '';
             const routeMatch = text.match(
@@ -183,9 +194,13 @@ export async function POST(req: Request) {
             if (chirpMatch && chirpMatch[1].trim().length > 0) {
               routerChirp = chirpMatch[1].replace(/\\"/g, '"').trim();
             }
+          } else {
+            const errText = await routerRes.text();
+            console.log('[OpenAI] router error response', routerRes.status, errText.slice(0, 500));
           }
-        } catch {
+        } catch (routerErr) {
           clearTimeout(routerTimeoutId);
+          console.log('[OpenAI] router error', routerErr);
           route = routeFromContent(lastUserContent);
         }
         if (!routerChirp?.trim()) {
@@ -218,6 +233,7 @@ export async function POST(req: Request) {
 
         if (!res.ok) {
           const err = await res.text();
+          console.log('[OpenAI] completion error', res.status, err.slice(0, 500));
           sendSSE(controller, 'error', {
             error: `OpenAI API error: ${res.status}. ${err.slice(0, 200)}`
           });
@@ -228,8 +244,17 @@ export async function POST(req: Request) {
         const data = (await res.json()) as {
           choices?: Array<{ message?: { content?: string } }>;
         };
-        const content =
+        console.log('[OpenAI] completion response', JSON.stringify(data));
+        let content =
           data.choices?.[0]?.message?.content?.trim() ?? '';
+        if (REFUSAL_OR_IDK.test(content)) {
+          content = EDGE_FALLBACK_NO_DATA;
+        } else if (
+          (route === 'data' || route === 'advice') &&
+          content.length > 0
+        ) {
+          content = `${content}\n\n_For portfolio data and compliance review, use Ghostfolio with the API backend._`;
+        }
 
         sendSSE(controller, 'content', { content });
         controller.close();

@@ -79,8 +79,8 @@ const COMPLIANCE_BLOCK_PATTERNS = [
 const COMPLIANCE_BLOCK_MESSAGE =
   "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
 
-/** Appended to every compliance output to indicate QA for compliance and safety. */
-const COMPLIANCE_QA_SUFFIX =
+/** Appended to every compliance output to indicate QA for compliance and safety. Exported for tests. */
+export const COMPLIANCE_QA_SUFFIX =
   'This message has been reviewed for compliance and safety.';
 
 /** Hard block: never return these phrases. Covers "I can't access your financial info" and redirects to bank/apps. */

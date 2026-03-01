@@ -20,6 +20,7 @@ import { createAdvisorAgentTools } from './langgraph/tools/advisor-agent.tools';
 import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
   AiChatGraphService,
+  COMPLIANCE_QA_SUFFIX,
   getDataRouteFallback,
   isForbiddenRefusalOrIdk,
   shouldBlockByInput,
@@ -385,6 +386,7 @@ describe('AI chat graph & reliability', () => {
       expect(trace.content.length).toBeGreaterThan(0);
       expect(trace.content).not.toMatch(/unable to access personal financial information/i);
       expect(trace.content).not.toMatch(/I cannot access your (information|data)/i);
+      expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
     });
 
     it('data agent always invokes status tools (get_total_value, get_holdings, get_portfolio_performance, list_accounts, get_account_balances)', async () => {
@@ -461,6 +463,7 @@ describe('AI chat graph & reliability', () => {
       const totalCall = trace.toolCalls.find((tc) => tc.name === 'get_total_value');
       expect(totalCall).toBeDefined();
       expect(totalCall!.result).toContain(String(testValue));
+      expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
     });
 
     it('advice agent always invokes status tool (get_allocation_summary)', async () => {
@@ -531,6 +534,7 @@ describe('AI chat graph & reliability', () => {
       expect(allocCall).toBeDefined();
       expect(allocCall!.result).not.toBe('Tool not found.');
       expect(trace.content).not.toMatch(/unable to access personal financial information/i);
+      expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
     });
 
     it('chat() with mocked LLM triggers backend (getDetails)', async () => {
@@ -542,6 +546,54 @@ describe('AI chat graph & reliability', () => {
       });
 
       expect(portfolioService.getDetails).toHaveBeenCalled();
+    });
+
+    describe('compliance gate — architecture must hit compliance before returning content', () => {
+      it('run() content ends with compliance QA suffix (proves compliance node ran)', async () => {
+        setUseMockChatOpenAI(true, 'data');
+        const result = await aiChatGraphService.run({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's my allocation?")],
+          openAiKey: 'mock-key',
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        expect(result.content).toBeDefined();
+        expect(result.content).toContain(COMPLIANCE_QA_SUFFIX);
+      });
+
+      it('runStream() content chunk ends with compliance QA suffix (proves compliance node ran)', async () => {
+        setUseMockChatOpenAI(true, 'general');
+        const chunks: { chirp?: string; content?: string }[] = [];
+        for await (const chunk of aiChatGraphService.runStream({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Hi')],
+          openAiKey: 'mock-key',
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        })) {
+          chunks.push(chunk);
+        }
+        const contentChunks = chunks.filter((c) => c.content != null && c.content !== '');
+        expect(contentChunks.length).toBeGreaterThanOrEqual(1);
+        expect(contentChunks.some((c) => c.content!.includes(COMPLIANCE_QA_SUFFIX))).toBe(true);
+      });
+
+      it('runWithTrace() content ends with compliance QA suffix (proves compliance node ran)', async () => {
+        setUseMockChatOpenAI(true, 'data');
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('How much money do I have?')],
+          openAiKey: 'mock-key',
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        expect(trace.content).toBeDefined();
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      });
     });
   });
 });
