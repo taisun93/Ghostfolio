@@ -7,8 +7,9 @@
  *
  * Pipeline: router call to get chirp (data/advice/general agent), then one OpenAI completion.
  * NOTE: This edge route has NO portfolio tools, NO data agent, and NO compliance gate. For "how much
- * money do I have" etc. the model has no account data, so it often refuses. We replace that refusal
- * with a fallback message and suggest using the Ghostfolio API backend for full features.
+ * money do I have" etc. the model has no account data, so it often refuses; we replace that with a
+ * short fallback. To get real portfolio answers: in vercel.json add a rewrite so /api/* goes to your
+ * Nest backend (e.g. "destination": "https://your-ghostfolio-api.up.railway.app/api/:path*").
  */
 export const config = { runtime: 'edge' };
 
@@ -78,10 +79,10 @@ function sendSSE(
 
 /** Refusal phrases we never show (match Nest REFUSAL_WHEN_HAVING_DATA + IDK_OR_NON_ANSWER). */
 const REFUSAL_OR_IDK =
-  /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?(personal )?financial|don't have access to (your )?(personal )?(account|portfolio|financial)|(I'm sorry,?\s*)?(I don't have|I do not have) access to (personal )?financial|check your bank (account|statements)|log into your (online )?banking|to find out how much money you have|check your (bank |investment )?account|I don't know|I do not know|I'm not sure|I am not sure|I don't have (that )?information|I (can't|cannot) (tell|provide|say|help with that)|I'm (unable|not able) to (tell|provide|say)|I (don't|do not) have (access to )?(that )?data|no (information|data) (available|to share)/i;
+  /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?(personal )?financial|don't have access to (your )?(personal )?(account|portfolio|financial)|(I'm sorry,?\s*)?(I don't have|I do not have) access to (personal )?financial(\s+information)?|check your bank (account|statements)|log into your (online )?banking|to find out how much money you have|check your (bank |investment )?account|managing your finances|If you need help with budgeting|I don't know|I do not know|I'm not sure|I am not sure|I don't have (that )?information|I (can't|cannot) (tell|provide|say|help with that)|I'm (unable|not able) to (tell|provide|say)|I (don't|do not) have (access to )?(that )?data|no (information|data) (available|to share)/i;
 
 const EDGE_FALLBACK_NO_DATA =
-  "This chat doesn't have access to your portfolio. For answers like \"How much money do I have?\" or \"What's my allocation?\", use Ghostfolio with the API backend (self-hosted or with backend deployed). Here you can ask general questions.";
+  "Portfolio data isn't available on this deployment. Use Ghostfolio with the API backend for balance, allocation, and holdings—or ask a general question here.";
 
 function getBearerToken(req: Request): string | null {
   const auth = req.headers.get('Authorization') || '';
