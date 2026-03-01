@@ -29,6 +29,8 @@ import { createAdvisorAgentTools } from './tools/advisor-agent.tools';
 import { createDataAgentTools } from './tools/data-agent.tools';
 
 const MAX_TOOL_ITERATIONS = 10;
+/** Minimum loop iterations before accepting a reply; all agents (data, advice, general) loop until decent result. */
+const MIN_AGENT_LOOP_ITERATIONS = 3;
 
 const ROUTER_SYSTEM = `You classify the user's message and produce a short chirp. Reply with only a JSON object: {"route": "data" | "advice" | "general", "chirp": "one short sentence"}.
 - route "data": factual questions about holdings, allocation, performance, market data, accounts, orders, balances, total value, or how much money (e.g. "What's my allocation?", "How much money do I have?", "List my accounts").
@@ -102,6 +104,12 @@ export function isForbiddenRefusalOrIdk(content: string): boolean {
   const text = (content || '').trim();
   if (!text) return false;
   return REFUSAL_WHEN_HAVING_DATA.test(text) || IDK_OR_NON_ANSWER.test(text);
+}
+
+/** True when reply is non-empty and not a forbidden refusal/IDK; used to decide when to stop agent loops. */
+function isDecentReply(content: string): boolean {
+  const text = (content || '').trim();
+  return text.length > 0 && !isForbiddenRefusalOrIdk(text);
 }
 
 /** Exported for tests. Returns true when user input matches high-risk scam/fraud patterns (always block, no LLM call). */
@@ -524,16 +532,29 @@ Answer using only the allocation data in the user message below. The user messag
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
       this.logger.log('general_agent entered');
-      const prompt = [
-        new SystemMessage(GENERAL_AGENT_SYSTEM),
-        ...state.messages
-      ];
-      const out = await generalModel.invoke(prompt);
-      let draftReply =
-        typeof out.content === 'string' ? out.content : String(out.content ?? '');
-      if (isForbiddenRefusalOrIdk(draftReply)) {
+      const system = new SystemMessage(GENERAL_AGENT_SYSTEM);
+      let current: BaseMessage[] = [system, ...state.messages];
+      const generalNudge =
+        'Please provide a helpful, direct answer.';
+      let draftReply = '';
+      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+        const out = await generalModel.invoke(current);
+        draftReply =
+          typeof out.content === 'string' ? out.content : String(out.content ?? '');
+        if (
+          i >= MIN_AGENT_LOOP_ITERATIONS - 1 &&
+          isDecentReply(draftReply)
+        ) {
+          break;
+        }
+        current = current.concat([
+          out as AIMessage,
+          new HumanMessage(generalNudge)
+        ]);
+      }
+      if (!isDecentReply(draftReply)) {
         draftReply = FALLBACK_NEVER_REFUSAL;
-        this.logger.log('general_agent return: refusal/IDK replaced with fallback');
+        this.logger.log('general_agent return: no decent reply after loop, using fallback');
       }
       this.logger.log(
         `general_agent return → compliance (draftReply length=${draftReply.length})`
@@ -758,6 +779,8 @@ Answer using only the allocation data in the user message below. The user messag
     const system = new SystemMessage(systemContent);
     let current: BaseMessage[] = [system, ...messages];
     const toolCallRecords: ToolCallRecord[] = [];
+    const nudgeMessage =
+      'Please use the available tools to get the relevant data, then provide a clear answer based on that data.';
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const response = await model.invoke(current);
       const responseToolCalls = (response as AIMessage).tool_calls ?? [];
@@ -765,7 +788,17 @@ Answer using only the allocation data in the user message below. The user messag
         const content = response.content;
         const reply =
           typeof content === 'string' ? content : String(content ?? '');
-        return { reply, toolCalls: toolCallRecords };
+        if (
+          i >= MIN_AGENT_LOOP_ITERATIONS - 1 &&
+          isDecentReply(reply)
+        ) {
+          return { reply, toolCalls: toolCallRecords };
+        }
+        current = current.concat([
+          response,
+          new HumanMessage(nudgeMessage)
+        ]);
+        continue;
       }
       current = current.concat([response]);
       for (const tc of responseToolCalls) {

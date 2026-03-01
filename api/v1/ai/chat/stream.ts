@@ -174,6 +174,16 @@ export async function POST(req: Request) {
           () => routerAbort.abort(),
           ROUTER_TIMEOUT_MS
         );
+        const routerBody = {
+          model: MODEL,
+          messages: [
+            { role: 'system', content: ROUTER_SYSTEM },
+            { role: 'user', content: lastUserContent || 'Hi' }
+          ],
+          max_tokens: 150,
+          temperature: 0
+        };
+        console.log('[OpenAI] router request', JSON.stringify(routerBody));
         try {
           const routerRes = await fetch(OPENAI_CHAT_URL, {
             method: 'POST',
@@ -182,15 +192,7 @@ export async function POST(req: Request) {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${apiKey}`
             },
-            body: JSON.stringify({
-              model: MODEL,
-              messages: [
-                { role: 'system', content: ROUTER_SYSTEM },
-                { role: 'user', content: lastUserContent || 'Hi' }
-              ],
-              max_tokens: 150,
-              temperature: 0
-            })
+            body: JSON.stringify(routerBody)
           });
           clearTimeout(routerTimeoutId);
           if (routerRes.ok) {
@@ -232,6 +234,28 @@ export async function POST(req: Request) {
           REQUEST_TIMEOUT_MS
         );
 
+        const completionBody = {
+          model: MODEL,
+          messages,
+          max_tokens: 1024,
+          temperature: 0.2
+        };
+        console.log(
+          '[OpenAI] completion request (no tools, single call)',
+          JSON.stringify({
+            model: completionBody.model,
+            max_tokens: completionBody.max_tokens,
+            temperature: completionBody.temperature,
+            messageCount: completionBody.messages.length,
+            messages: completionBody.messages.map((m) => ({
+              role: m.role,
+              contentLength: (m as { content?: string }).content?.length ?? 0,
+              contentPreview:
+                ((m as { content?: string }).content ?? '').slice(0, 200) +
+                (((m as { content?: string }).content?.length ?? 0) > 200 ? '...' : '')
+            }))
+          })
+        );
         const res = await fetch(OPENAI_CHAT_URL, {
           method: 'POST',
           signal: controllerAbort.signal,
@@ -239,12 +263,7 @@ export async function POST(req: Request) {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`
           },
-          body: JSON.stringify({
-            model: MODEL,
-            messages,
-            max_tokens: 1024,
-            temperature: 0.2
-          })
+          body: JSON.stringify(completionBody)
         });
 
         clearTimeout(timeoutId);
