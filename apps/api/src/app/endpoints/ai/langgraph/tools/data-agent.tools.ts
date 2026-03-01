@@ -33,7 +33,7 @@ const DUMMY = {
       currency: 'USD',
       marketState: 'REGULAR'
     }),
-  get_historical_prices: (symbol: string) =>
+  get_historical_prices: (_symbol: string) =>
     JSON.stringify([
       { date: '2024-01-15', marketPrice: 165 },
       { date: '2024-02-15', marketPrice: 170 },

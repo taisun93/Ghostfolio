@@ -22,6 +22,7 @@ import { createAdvisorAgentTools } from './langgraph/tools/advisor-agent.tools';
 import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
   AiChatGraphService,
+  getDataRouteFallback,
   shouldBlockByInput
 } from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
@@ -497,6 +498,39 @@ describe('Golden set (AI chat)', () => {
 
         expect(trace.route).toBe('general');
         expect(trace.toolCalls).toHaveLength(0);
+      }
+    );
+
+    itWithKey(
+      '"how much money i got" / "How much money do I have?" uses data route and a value tool, reply includes a number or value',
+      async () => {
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [
+            new HumanMessage('how much money i got')
+          ],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+
+        expect(trace.route).toBe('data');
+        const valueToolNames = [
+          'get_total_value',
+          'get_holdings',
+          'get_portfolio_performance'
+        ];
+        const usedValueTool = trace.toolCalls.some((tc) =>
+          valueToolNames.includes(tc.name)
+        );
+        expect(usedValueTool).toBe(true);
+        expect(trace.content).toBeDefined();
+        expect(trace.content.length).toBeGreaterThan(0);
+        const hasNumberOrValue =
+          /\d+/.test(trace.content) ||
+          /total|value|worth|money|16,?250|16250/i.test(trace.content);
+        expect(hasNumberOrValue).toBe(true);
       }
     );
   });
@@ -1450,6 +1484,36 @@ describe('Golden set (AI chat)', () => {
       expect(shouldBlockByInput('Should I rebalance?')).toBe(false);
       expect(shouldBlockByInput('Hi')).toBe(false);
       expect(shouldBlockByInput('')).toBe(false);
+    });
+
+    it('router fallback: "how much money i got" and similar route to data', () => {
+      expect(getDataRouteFallback('how much money i got')).toBe('data');
+      expect(getDataRouteFallback('How much money do I have?')).toBe('data');
+      expect(getDataRouteFallback('what is my total value')).toBe('data');
+      expect(getDataRouteFallback('how much am i worth')).toBe('data');
+    });
+
+    it('get_total_value tool with dummy data returns total value and currency', async () => {
+      const tools = createDataAgentTools(
+        {
+          accountBalanceService: accountBalanceService as unknown as AccountBalanceService,
+          accountService: accountService as unknown as AccountService,
+          dataProviderService: dataProviderService as unknown as DataProviderService,
+          marketDataService: marketDataService as unknown as MarketDataService,
+          orderService: orderService as unknown as OrderService,
+          portfolioService: portfolioService as unknown as PortfolioService
+        },
+        { userCurrency: 'USD', userId: 'test-user', useDummyData: true }
+      );
+      const getTotalValue = tools.find((t) => t.name === 'get_total_value');
+      expect(getTotalValue).toBeDefined();
+      const result = await getTotalValue!.invoke({});
+      const parsed = JSON.parse(result) as {
+        totalValueInBaseCurrency?: number;
+        currency?: string;
+      };
+      expect(parsed.totalValueInBaseCurrency).toBe(16250);
+      expect(parsed.currency).toBe('USD');
     });
 
     it('data agent get_holdings returns Error string when portfolio service throws', async () => {

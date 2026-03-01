@@ -66,6 +66,24 @@ export function shouldBlockByInput(userContent: string): boolean {
   return COMPLIANCE_BLOCK_PATTERNS.some((re) => re.test(text));
 }
 
+/** Exported for tests. Returns fallback route when LLM router fails; same logic as router catch block. */
+export function getDataRouteFallback(content: string): RouteType | null {
+  const lower = (content || '').toLowerCase().trim();
+  if (!lower) return null;
+  if (
+    /\b(holdings?|allocation|performance|accounts?|orders?|balance|quote|price|symbol|worth|how much|total value|money have|money|got|value)\b/.test(
+      lower
+    ) &&
+    !/\b(should|rebalance|risk|diversif|advice)\b/.test(lower)
+  ) {
+    return 'data';
+  }
+  if (/\b(should|rebalance|risk|diversif|advice|recommend)\b/.test(lower)) {
+    return 'advice';
+  }
+  return null;
+}
+
 /** Max time for the full graph (router + agent + compliance). Prevents runaway requests. */
 const GRAPH_TIMEOUT_MS = 55_000;
 
@@ -245,7 +263,7 @@ export class AiChatGraphService {
       } catch {
         const lower = content.toLowerCase();
         if (
-          /\b(holdings?|allocation|performance|accounts?|orders?|balance|quote|price|symbol|worth|how much|total value|money have)\b/.test(
+          /\b(holdings?|allocation|performance|accounts?|orders?|balance|quote|price|symbol|worth|how much|total value|money have|money|got|value)\b/.test(
             lower
           ) &&
           !/\b(should|rebalance|risk|diversif|advice)\b/.test(lower)
