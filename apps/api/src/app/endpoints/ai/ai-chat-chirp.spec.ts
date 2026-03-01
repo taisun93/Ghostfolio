@@ -1,7 +1,9 @@
 /**
- * Test suite for chirping: the router message that tells the user which agent
+ * Test suite 2 of 3: Chirping — the router message that tells the user which agent
  * is being asked (data / advice / general). Ensures the graph and service
  * always return a non-empty, meaningful chirp.
+ *
+ * Other suites: ai-chat.service.spec.ts (Golden set), ai-chat-graph.spec.ts (graph & reliability).
  */
 import { AccountBalanceService } from '@ghostfolio/api/app/account-balance/account-balance.service';
 import { AccountService } from '@ghostfolio/api/app/account/account.service';

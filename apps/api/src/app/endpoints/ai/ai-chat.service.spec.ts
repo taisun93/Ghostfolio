@@ -1,10 +1,8 @@
 /**
- * Golden set: AI chat pipeline tests against real AiChatGraphService with mocked backend.
+ * Test suite 1 of 3: Golden set — AI chat pipeline tests against real AiChatGraphService with mocked backend.
  * Cases 1–2 run without an API key; cases 3+ require OPENAI_API_KEY or API_KEY_OPENAI in .env (skipped in CI when key is missing).
  *
- * Tool-selection assertions are kept loose (e.g. "data route + response") so passes don't depend on
- * which tool the model chooses. For stricter "which tool was called" checks, consider a separate
- * best-effort set where only X% of tests must pass (e.g. run script that fails if pass rate < 80%).
+ * Other suites: ai-chat-chirp.spec.ts (chirping), ai-chat-graph.spec.ts (graph & reliability).
  */
 import { AccountBalanceService } from '@ghostfolio/api/app/account-balance/account-balance.service';
 import { AccountService } from '@ghostfolio/api/app/account/account.service';
@@ -18,12 +16,8 @@ import type { PortfolioPosition } from '@ghostfolio/common/interfaces';
 
 import { HumanMessage } from '@langchain/core/messages';
 
-import { createAdvisorAgentTools } from './langgraph/tools/advisor-agent.tools';
-import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
-  AiChatGraphService,
-  getDataRouteFallback,
-  shouldBlockByInput
+  AiChatGraphService
 } from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
 
@@ -1485,112 +1479,5 @@ describe('Golden set (AI chat)', () => {
         expect(hasPerfOrHoldings).toBe(true);
       }
     );
-  });
-
-  describe('Broken flows / reliability (CI-safe, no API key)', () => {
-    it('compliance input block: blocks known scam/fraud phrases', () => {
-      expect(shouldBlockByInput('wire money to a prince in Nigeria')).toBe(true);
-      expect(shouldBlockByInput('Send crypto urgently to this address')).toBe(
-        true
-      );
-      expect(shouldBlockByInput('I need to wire funds immediately')).toBe(
-        true
-      );
-      expect(shouldBlockByInput('Transfer money urgently to secure account')).toBe(
-        true
-      );
-    });
-
-    it('compliance input block: allows normal portfolio questions', () => {
-      expect(shouldBlockByInput("What's my allocation?")).toBe(false);
-      expect(shouldBlockByInput('Should I rebalance?')).toBe(false);
-      expect(shouldBlockByInput('Hi')).toBe(false);
-      expect(shouldBlockByInput('')).toBe(false);
-    });
-
-    it('router fallback: "how much money i got" and similar route to data', () => {
-      expect(getDataRouteFallback('how much money i got')).toBe('data');
-      expect(getDataRouteFallback('How much money do I have?')).toBe('data');
-      expect(getDataRouteFallback('what is my total value')).toBe('data');
-      expect(getDataRouteFallback('how much am i worth')).toBe('data');
-    });
-
-    it('get_total_value tool with dummy data returns total value and currency', async () => {
-      const tools = createDataAgentTools(
-        {
-          accountBalanceService: accountBalanceService as unknown as AccountBalanceService,
-          accountService: accountService as unknown as AccountService,
-          dataProviderService: dataProviderService as unknown as DataProviderService,
-          marketDataService: marketDataService as unknown as MarketDataService,
-          orderService: orderService as unknown as OrderService,
-          portfolioService: portfolioService as unknown as PortfolioService
-        },
-        { userCurrency: 'USD', userId: 'test-user', useDummyData: true }
-      );
-      const getTotalValue = tools.find((t) => t.name === 'get_total_value');
-      expect(getTotalValue).toBeDefined();
-      const result = await getTotalValue!.invoke({});
-      const parsed = JSON.parse(result) as {
-        totalValueInBaseCurrency?: number;
-        currency?: string;
-      };
-      expect(parsed.totalValueInBaseCurrency).toBe(16250);
-      expect(parsed.currency).toBe('USD');
-    });
-
-    it('data agent get_holdings returns Error string when portfolio service throws', async () => {
-      const mockPortfolio = {
-        getDetails: jest.fn().mockRejectedValue(new Error('DB unavailable'))
-      };
-      const tools = createDataAgentTools(
-        {
-          accountBalanceService: accountBalanceService as unknown as AccountBalanceService,
-          accountService: accountService as unknown as AccountService,
-          dataProviderService: dataProviderService as unknown as DataProviderService,
-          marketDataService: marketDataService as unknown as MarketDataService,
-          orderService: orderService as unknown as OrderService,
-          portfolioService: mockPortfolio as unknown as PortfolioService
-        },
-        {
-          userCurrency: 'USD',
-          userId: 'test-user'
-        }
-      );
-      const getHoldings = tools.find((t) => t.name === 'get_holdings');
-      expect(getHoldings).toBeDefined();
-      const result = await getHoldings!.invoke({});
-      expect(result).toMatch(/^(Error:|Error fetching holdings:)/);
-      expect(result).toContain('DB unavailable');
-    });
-
-    it('advisor agent get_allocation_summary returns Error string when portfolio service throws', async () => {
-      const mockPortfolio = {
-        getDetails: jest.fn().mockRejectedValue(new Error('Service down'))
-      };
-      const tools = createAdvisorAgentTools(
-        { portfolioService: mockPortfolio as unknown as PortfolioService },
-        { userCurrency: 'USD', userId: 'test-user' }
-      );
-      const getAlloc = tools.find((t) => t.name === 'get_allocation_summary');
-      expect(getAlloc).toBeDefined();
-      const result = await getAlloc!.invoke({});
-      expect(result).toMatch(/^Error:/);
-      expect(result).toContain('Service down');
-    });
-
-    it('AiChatService.chat throws with clear message when graph fails', async () => {
-      propertyService.getByKey.mockResolvedValue('fake-key');
-      const runSpy = jest
-        .spyOn(aiChatGraphService, 'run')
-        .mockRejectedValueOnce(new Error('OpenAI rate limit'));
-
-      await expect(
-        aiChatService.chat({
-          ...BASE_PARAMS,
-          messages: [{ role: 'user', content: 'Hello' }]
-        })
-      ).rejects.toThrow(/AI chat|failed|OpenAI/);
-      runSpy.mockRestore();
-    });
   });
 });
