@@ -31,7 +31,7 @@ import { createDataAgentTools } from './tools/data-agent.tools';
 const MAX_TOOL_ITERATIONS = 10;
 
 const ROUTER_SYSTEM = `You classify the user's message into exactly one category. Reply with only a JSON object: {"route": "data" | "advice" | "general"}.
-- data: factual questions about holdings, allocation, performance, market data, accounts, orders, balances (e.g. "What's my allocation?", "List my accounts").
+- data: factual questions about holdings, allocation, performance, market data, accounts, orders, balances, total value, or how much money (e.g. "What's my allocation?", "How much money do I have?", "List my accounts", "What's my portfolio worth?").
 - advice: what should I do, rebalance, risk, diversification (e.g. "Should I rebalance?", "Is my portfolio too risky?").
 - general: greetings, off-topic, non-finance (e.g. "Hi", "What's the weather?").`;
 
@@ -245,7 +245,7 @@ export class AiChatGraphService {
       } catch {
         const lower = content.toLowerCase();
         if (
-          /\b(holdings?|allocation|performance|accounts?|orders?|balance|quote|price|symbol)\b/.test(
+          /\b(holdings?|allocation|performance|accounts?|orders?|balance|quote|price|symbol|worth|how much|total value|money have)\b/.test(
             lower
           ) &&
           !/\b(should|rebalance|risk|diversif|advice)\b/.test(lower)

@@ -44,30 +44,32 @@ function parseMessages(messages: unknown): MessageRow[] {
   );
 }
 
-/** Persist messages to Postgres in the background (do not await). */
+/** Persist messages to Postgres in the background. Uses getMessagesSnapshot() when the job runs so we write the latest state (avoids race when multiple POSTs run). */
 function persistToPostgresInBackground(
   connectionString: string,
   userId: string,
-  messages: MessageRow[]
+  getMessagesSnapshot: () => MessageRow[]
 ): void {
-  const now = new Date().toISOString();
   void (async () => {
     try {
+      const messages = getMessagesSnapshot();
+      const now = new Date().toISOString();
       const sql = neon(connectionString);
       await ensureTable(sql);
-      const existing = await sql`
+      const rows = await sql`
         SELECT id
         FROM ai_chat_conversations
         WHERE user_id = ${userId}
         ORDER BY updated_at DESC
         LIMIT 1
       `;
-      const row = Array.isArray(existing) ? existing[0] : existing;
-      if (row) {
+      const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      const rowId = row && typeof row === 'object' && 'id' in row ? String((row as { id: unknown }).id) : null;
+      if (rowId) {
         await sql`
           UPDATE ai_chat_conversations
           SET messages = ${JSON.stringify(messages)}::jsonb, updated_at = ${now}::timestamptz
-          WHERE id = ${(row as { id: string }).id}
+          WHERE id = ${rowId}
         `;
       } else {
         await sql`
@@ -76,7 +78,7 @@ function persistToPostgresInBackground(
         `;
       }
     } catch (err) {
-      console.error('AI chat background persist', err);
+      console.error('AI chat Postgres persist failed', err);
     }
   })();
 }
@@ -178,10 +180,10 @@ export async function POST(req: Request) {
   appendMessage(userId, newMessage);
   const updated = getMessages(userId)!;
 
-  // Persist to Postgres in the background (do not block the response).
+  // Persist to Postgres in the background; pass getter so we write latest state when the job runs.
   const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (connectionString) {
-    persistToPostgresInBackground(connectionString, userId, updated);
+    persistToPostgresInBackground(connectionString, userId, () => getMessages(userId) ?? []);
   }
 
   return new Response(

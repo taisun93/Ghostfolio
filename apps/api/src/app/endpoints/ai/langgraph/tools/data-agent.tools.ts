@@ -16,7 +16,9 @@ const emptySchema = z.object({});
 /** Stub data when useDummyData is true so agents can call tools without real backend. */
 const DUMMY = {
   get_holdings: (currency: string) =>
-    `Holdings (base ${currency}):\nAAPL 55.00% USD EQUITY \nMSFT 30.00% USD EQUITY \nGOOGL 15.00% USD EQUITY`,
+    `Holdings (base ${currency}):\nAAPL 55.00% USD EQUITY \nMSFT 30.00% USD EQUITY \nGOOGL 15.00% USD EQUITY\nTotal value: 16250 ${currency}`,
+  get_total_value: (currency: string) =>
+    JSON.stringify({ totalValueInBaseCurrency: 16250, currency }),
   get_portfolio_performance: () =>
     JSON.stringify({
       netPerformance: 1250,
@@ -97,12 +99,34 @@ export function createDataAgentTools(
 
   return [
     tool(
+      'get_total_value',
+      'Get total portfolio value (how much money the user has in their portfolio). Use for questions like "how much money do I have", "what is my total value", "how much am I worth". Returns totalValueInBaseCurrency and currency.',
+      async () => {
+        if (useDummyData) return DUMMY.get_total_value(userCurrency);
+        try {
+          const { summary } = await services.portfolioService.getDetails({
+            filters,
+            impersonationId: imp,
+            userId,
+            withSummary: true
+          });
+          const total = summary?.currentValueInBaseCurrency ?? 0;
+          return JSON.stringify({
+            totalValueInBaseCurrency: total,
+            currency: userCurrency
+          });
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+      }
+    ),
+    tool(
       'get_holdings',
-      'Get current portfolio holdings and allocation. Returns symbols, quantities, allocation percentages, and value in user currency.',
+      'Get current portfolio holdings and allocation. Returns symbols, allocation percentages, and total value in user currency. Use for "what do I hold", "my positions".',
       async () => {
         if (useDummyData) return DUMMY.get_holdings(userCurrency);
         try {
-          const { holdings } = await services.portfolioService.getDetails({
+          const { holdings, summary } = await services.portfolioService.getDetails({
             filters,
             impersonationId: imp,
             userId,
@@ -114,8 +138,13 @@ export function createDataAgentTools(
               (h) =>
                 `${h.symbol} ${((h.allocationInPercentage ?? 0) * 100).toFixed(2)}% ${h.currency} ${h.assetClass ?? ''} ${h.assetSubClass ?? ''}`
             );
-          if (rows.length === 0) return 'No holdings.';
-          return `Holdings (base ${userCurrency}):\n${rows.join('\n')}`;
+          const total = summary?.currentValueInBaseCurrency ?? 0;
+          if (rows.length === 0) {
+            return total > 0
+              ? `Total value: ${total} ${userCurrency}. No holdings breakdown.`
+              : 'No holdings.';
+          }
+          return `Holdings (base ${userCurrency}):\n${rows.join('\n')}\nTotal value: ${total} ${userCurrency}`;
         } catch (err) {
           return `Error fetching holdings: ${err instanceof Error ? err.message : 'Unknown error'}`;
         }
@@ -124,7 +153,7 @@ export function createDataAgentTools(
     structuredTool({
       name: 'get_portfolio_performance',
       description:
-        'Get portfolio performance over a period: net performance, total investment, and percentage change.',
+        'Get portfolio performance: total value (currentNetWorth), how much money invested (totalInvestment), and percentage change. Use for "how much money do I have", "what is my portfolio worth", or performance over a period.',
       schema: z.object({
         dateRange: z
           .enum(['1d', '5d', '1m', '1y', '5y', 'max'])

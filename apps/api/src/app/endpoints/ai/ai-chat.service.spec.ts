@@ -438,6 +438,7 @@ describe('Golden set (AI chat)', () => {
         expect(trace.route).toBe('data');
         const toolNames = trace.toolCalls.map((tc) => tc.name);
         const dataToolNames = [
+          'get_total_value',
           'get_holdings',
           'get_portfolio_performance',
           'get_quote',
@@ -602,6 +603,7 @@ describe('Golden set (AI chat)', () => {
 
         expect(trace.route).toBe('data');
         const dataToolNames = [
+          'get_total_value',
           'get_holdings',
           'get_portfolio_performance',
           'get_quote',
