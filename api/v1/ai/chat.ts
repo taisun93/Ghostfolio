@@ -29,10 +29,23 @@ function isMessage(m: unknown): m is Message {
   );
 }
 
+function getBearerToken(req: Request): string | null {
+  const auth = req.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ') || auth.length < 10) return null;
+  return auth.slice(7).trim();
+}
+
 export async function POST(req: Request) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ message: 'Method not allowed' }), {
       status: 405,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  if (!getBearerToken(req)) {
+    return new Response(JSON.stringify({ message: 'Unauthorized' }), {
+      status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }

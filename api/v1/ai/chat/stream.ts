@@ -83,10 +83,23 @@ const REFUSAL_OR_IDK =
 const EDGE_FALLBACK_NO_DATA =
   "This chat doesn't have access to your portfolio. For answers like \"How much money do I have?\" or \"What's my allocation?\", use Ghostfolio with the API backend (self-hosted or with backend deployed). Here you can ask general questions.";
 
+function getBearerToken(req: Request): string | null {
+  const auth = req.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ') || auth.length < 10) return null;
+  return auth.slice(7).trim();
+}
+
 export async function POST(req: Request) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ message: 'Method not allowed' }), {
       status: 405,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  if (!getBearerToken(req)) {
+    return new Response(JSON.stringify({ message: 'Unauthorized' }), {
+      status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
