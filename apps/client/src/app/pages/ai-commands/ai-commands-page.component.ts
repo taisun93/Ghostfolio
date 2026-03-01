@@ -17,6 +17,14 @@ import { MatInputModule } from '@angular/material/input';
 import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
+import {
+  HEADER_KEY_IMPERSONATION,
+  HEADER_KEY_TIMEZONE,
+  HEADER_KEY_TOKEN
+} from '@ghostfolio/common/config';
+import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
+import { TokenStorageService } from '@ghostfolio/client/services/token-storage.service';
+
 import { parrotResponse } from './parrot-agent';
 
 export interface ChatMessage {
@@ -65,7 +73,9 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
   public constructor(
     private readonly changeDetectorRef: ChangeDetectorRef,
     private readonly http: HttpClient,
-    private readonly ngZone: NgZone
+    private readonly impersonationStorageService: ImpersonationStorageService,
+    private readonly ngZone: NgZone,
+    private readonly tokenStorageService: TokenStorageService
   ) {}
 
   public ngOnInit() {
@@ -127,39 +137,101 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
         content: m.text
       }));
 
-    this.http
-      .post<{ chirp?: string; content: string }>('/api/v1/ai/chat', {
-        messages: messagesForApi
-      })
-      .pipe(
-        catchError((err) => {
-          this.ngZone.run(() => {
-            this.errorMessage = this.getErrorMessage(err);
-          });
-          return of(null);
-        })
-      )
-      .subscribe((res) => {
-        // Run in NgZone + defer to next tick so UI updates reliably (avoids "only updates when DevTools open").
-        this.ngZone.run(() => {
-          setTimeout(() => {
-            this.isThinking = false;
-            if (res != null) {
-              // Order: parrot (already shown) → chirp → big answer
-              if (res.chirp != null && res.chirp.trim() !== '') {
-                this.addAssistantMessage(res.chirp);
-                this.persistMessage('assistant', res.chirp);
-              }
-              if (res.content != null && res.content.trim() !== '') {
-                this.addAssistantMessage(res.content);
-                this.persistMessage('assistant', res.content);
-              }
-            }
-            this.scrollToBottom();
-            this.changeDetectorRef.detectChanges();
-          }, 0);
-        });
+    this.streamChat(messagesForApi);
+  }
+
+  private async streamChat(messagesForApi: { role: string; content: string }[]): Promise<void> {
+    const token = this.tokenStorageService.getToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      [HEADER_KEY_TIMEZONE]: Intl?.DateTimeFormat().resolvedOptions().timeZone ?? ''
+    };
+    if (token != null) {
+      headers[HEADER_KEY_TOKEN] = `Bearer ${token}`;
+      const impersonationId = this.impersonationStorageService.getId();
+      if (impersonationId != null) {
+        headers[HEADER_KEY_IMPERSONATION] = impersonationId;
+      }
+    }
+
+    try {
+      const res = await fetch('/api/v1/ai/chat/stream', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ messages: messagesForApi })
       });
+
+      if (!res.ok) {
+        this.ngZone.run(() => {
+          this.isThinking = false;
+          this.errorMessage = this.getErrorMessage({ status: res.status, message: res.statusText });
+          this.changeDetectorRef.detectChanges();
+        });
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      if (!reader) {
+        this.ngZone.run(() => {
+          this.isThinking = false;
+          this.errorMessage = $localize`Stream not supported.`;
+          this.changeDetectorRef.detectChanges();
+        });
+        return;
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split(/\n\n/);
+        buffer = events.pop() ?? '';
+        for (const raw of events) {
+          let eventType = '';
+          let dataLine = '';
+          for (const line of raw.split('\n')) {
+            if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+            if (line.startsWith('data: ')) dataLine = line.slice(6);
+          }
+          if (!dataLine) continue;
+          try {
+            const data = JSON.parse(dataLine) as { chirp?: string; content?: string; error?: string };
+            this.ngZone.run(() => {
+              if (eventType === 'error' && data.error) {
+                this.isThinking = false;
+                this.errorMessage = data.error;
+              } else if (eventType === 'chirp' && data.chirp != null && data.chirp.trim() !== '') {
+                this.addAssistantMessage(data.chirp);
+                this.persistMessage('assistant', data.chirp);
+              } else if (eventType === 'content' && data.content != null) {
+                if (data.content.trim() !== '') {
+                  this.addAssistantMessage(data.content);
+                  this.persistMessage('assistant', data.content);
+                }
+                this.isThinking = false;
+              }
+              this.scrollToBottom();
+              this.changeDetectorRef.detectChanges();
+            });
+          } catch {
+            // ignore malformed event
+          }
+        }
+      }
+
+      this.ngZone.run(() => {
+        this.isThinking = false;
+        this.changeDetectorRef.detectChanges();
+      });
+    } catch (err) {
+      this.ngZone.run(() => {
+        this.isThinking = false;
+        this.errorMessage = this.getErrorMessage(err);
+        this.changeDetectorRef.detectChanges();
+      });
+    }
   }
 
   public startNewChat() {

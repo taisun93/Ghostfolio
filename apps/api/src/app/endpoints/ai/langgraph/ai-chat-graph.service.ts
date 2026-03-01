@@ -129,6 +129,60 @@ export class AiChatGraphService {
   }
 
   /**
+   * Stream the chat graph: emits { chirp } after the router, then { content } after compliance.
+   * Use for UI that shows "which agent" before the full answer.
+   */
+  public async *runStream({
+    filters,
+    impersonationId,
+    messages,
+    openAiKey,
+    userCurrency,
+    userId
+  }: {
+    filters?: Filter[];
+    impersonationId?: string;
+    messages: BaseMessage[];
+    openAiKey: string;
+    userCurrency: string;
+    userId: string;
+  }): AsyncGenerator<{ chirp?: string; content?: string }> {
+    const useDummyData =
+      process.env['AI_CHAT_DUMMY_DATA'] !== 'false' &&
+      process.env['AI_CHAT_DUMMY_DATA'] !== '0';
+    const graph = this.buildGraph(openAiKey);
+    const initialState: Partial<ChatGraphState> = {
+      filters,
+      finalContent: '',
+      impersonationId,
+      messages,
+      useDummyData,
+      userCurrency,
+      userId
+    };
+    type InvokeInput = Parameters<ReturnType<typeof this.buildGraph>['invoke']>[0];
+    const stream = await graph.stream(
+      initialState as unknown as InvokeInput,
+      { streamMode: 'updates' }
+    );
+    let chirpEmitted = false;
+    for await (const chunk of stream) {
+      const update = chunk as Record<string, Partial<ChatGraphState>>;
+      for (const nodeName of Object.keys(update)) {
+        const state = update[nodeName];
+        if (!state) continue;
+        if (nodeName === 'router' && state.routerChirp != null && state.routerChirp !== '' && !chirpEmitted) {
+          chirpEmitted = true;
+          yield { chirp: state.routerChirp };
+        }
+        if (nodeName === 'compliance' && state.finalContent != null) {
+          yield { content: state.finalContent };
+        }
+      }
+    }
+  }
+
+  /**
    * Run the chat graph and return content plus trace (route, tool calls).
    * Use for eval and tests that assert on tool selection/execution.
    */

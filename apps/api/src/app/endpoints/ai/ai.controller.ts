@@ -5,6 +5,8 @@ import { AiPromptResponse } from '@ghostfolio/common/interfaces';
 import { permissions } from '@ghostfolio/common/permissions';
 import type { AiPromptMode, RequestWithUser } from '@ghostfolio/common/types';
 
+import type { Response } from 'express';
+
 import {
   Body,
   Controller,
@@ -13,6 +15,7 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards
 } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
@@ -74,5 +77,41 @@ export class AiController {
       userCurrency: this.request.user.settings.settings.baseCurrency,
       userId: this.request.user.id
     });
+  }
+
+  @Post('chat/stream')
+  @HasPermission(permissions.readAiPrompt)
+  @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
+  public async chatStream(
+    @Body() body: AiChatRequestDto,
+    @Res() res: Response
+  ): Promise<void> {
+    const filters = this.apiService.buildFiltersFromQueryParams({});
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    try {
+      for await (const chunk of this.aiChatService.chatStream({
+        filters,
+        impersonationId: undefined,
+        messages: body.messages.map((m) => ({ role: m.role, content: m.content })),
+        userCurrency: this.request.user.settings.settings.baseCurrency,
+        userId: this.request.user.id
+      })) {
+        if (chunk.chirp != null) {
+          res.write(`event: chirp\ndata: ${JSON.stringify({ chirp: chunk.chirp })}\n\n`);
+        }
+        if (chunk.content != null) {
+          res.write(`event: content\ndata: ${JSON.stringify({ content: chunk.content })}\n\n`);
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Stream failed';
+      res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 }
