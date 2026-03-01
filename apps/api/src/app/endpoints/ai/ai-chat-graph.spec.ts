@@ -366,7 +366,7 @@ describe('AI chat graph & reliability', () => {
       expect(trace.content).not.toMatch(/I cannot access your (information|data)/i);
     });
 
-    it('data agent always invokes status tools (get_total_value, get_holdings, get_portfolio_performance)', async () => {
+    it('data agent always invokes status tools (get_total_value, get_holdings, get_portfolio_performance, list_accounts, get_account_balances)', async () => {
       const trace = await aiChatGraphService.runWithTrace({
         filters: BASE_PARAMS.filters,
         impersonationId: BASE_PARAMS.impersonationId,
@@ -380,7 +380,9 @@ describe('AI chat graph & reliability', () => {
       const statusToolNames = [
         'get_total_value',
         'get_holdings',
-        'get_portfolio_performance'
+        'get_portfolio_performance',
+        'list_accounts',
+        'get_account_balances'
       ];
       for (const name of statusToolNames) {
         const call = trace.toolCalls.find((tc) => tc.name === name);

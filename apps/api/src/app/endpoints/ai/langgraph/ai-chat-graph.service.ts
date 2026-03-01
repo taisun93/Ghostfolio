@@ -400,7 +400,9 @@ export class AiChatGraphService {
         await this.runStatusTools(tools, [
           { name: 'get_total_value', args: {} },
           { name: 'get_holdings', args: {} },
-          { name: 'get_portfolio_performance', args: { dateRange: 'max' } }
+          { name: 'get_portfolio_performance', args: { dateRange: 'max' } },
+          { name: 'list_accounts', args: {} },
+          { name: 'get_account_balances', args: {} }
         ]);
       const systemWithContext = `${DATA_AGENT_SYSTEM}
 
