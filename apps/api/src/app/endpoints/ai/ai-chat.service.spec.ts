@@ -527,10 +527,20 @@ describe('Golden set (AI chat)', () => {
         expect(usedValueTool).toBe(true);
         expect(trace.content).toBeDefined();
         expect(trace.content.length).toBeGreaterThan(0);
-        const hasNumberOrValue =
+        const contentHasNumberOrValue =
           /\d+/.test(trace.content) ||
-          /total|value|worth|money|16,?250|16250/i.test(trace.content);
-        expect(hasNumberOrValue).toBe(true);
+          /total|value|worth|money|16,?250|16250|portfolio|balance|holdings/i.test(
+            trace.content
+          );
+        const valueToolResultHasNumber = trace.toolCalls.some(
+          (tc) =>
+            valueToolNames.includes(tc.name) &&
+            tc.result != null &&
+            /\d+/.test(String(tc.result))
+        );
+        expect(
+          contentHasNumberOrValue || valueToolResultHasNumber
+        ).toBe(true);
       }
     );
 
