@@ -83,7 +83,7 @@ const COMPLIANCE_BLOCK_MESSAGE =
 
 /** Appended to every compliance output to indicate QA for compliance and safety. Exported for tests. */
 export const COMPLIANCE_QA_SUFFIX =
-  'This message has been reviewed for compliance and safety.';
+  'This message has been reviewed for compliance and safety. This is not financial or investment advice.';
 
 /** Hard block: never return these phrases. Covers "I can't access your financial info" and redirects to bank/apps. */
 const REFUSAL_WHEN_HAVING_DATA =
