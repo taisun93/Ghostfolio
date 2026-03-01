@@ -30,10 +30,11 @@ import { createDataAgentTools } from './tools/data-agent.tools';
 
 const MAX_TOOL_ITERATIONS = 10;
 
-const ROUTER_SYSTEM = `You classify the user's message into exactly one category. Reply with only a JSON object: {"route": "data" | "advice" | "general"}.
-- data: factual questions about holdings, allocation, performance, market data, accounts, orders, balances, total value, or how much money (e.g. "What's my allocation?", "How much money do I have?", "List my accounts", "What's my portfolio worth?").
-- advice: what should I do, rebalance, risk, diversification (e.g. "Should I rebalance?", "Is my portfolio too risky?").
-- general: greetings, off-topic, non-finance (e.g. "Hi", "What's the weather?").`;
+const ROUTER_SYSTEM = `You classify the user's message and produce a short chirp. Reply with only a JSON object: {"route": "data" | "advice" | "general", "chirp": "one short sentence"}.
+- route "data": factual questions about holdings, allocation, performance, market data, accounts, orders, balances, total value, or how much money (e.g. "What's my allocation?", "How much money do I have?", "List my accounts").
+- route "advice": what should I do, rebalance, risk, diversification (e.g. "Should I rebalance?", "Is my portfolio too risky?").
+- route "general": greetings, off-topic, non-finance (e.g. "Hi", "What's the weather?").
+- chirp: exactly one short sentence telling the user which agent you are asking, e.g. "Let me ask the data agent about your question." or "Let me ask the advice agent about that." or "Let me ask the general assistant." Use "data agent", "advice agent", or "general assistant" to match the route. No other text.`;
 
 const DATA_AGENT_SYSTEM = `You are the data agent for Ghostfolio. Answer factual questions about the user's portfolio, holdings, allocation, performance, market data, accounts, and orders using the tools provided. Be concise and accurate. If data is missing, say so.`;
 
@@ -253,6 +254,7 @@ export class AiChatGraphService {
       const content =
         typeof lastUser?.content === 'string' ? lastUser.content : '';
       let route: RouteType = 'general';
+      let routerChirp = '';
       try {
         const prompt = [
           new SystemMessage(ROUTER_SYSTEM),
@@ -261,9 +263,13 @@ export class AiChatGraphService {
         const out = await routerModel.invoke(prompt);
         const text =
           typeof out.content === 'string' ? out.content : String(out.content);
-        const match = text.match(/\{\s*"route"\s*:\s*"(data|advice|general)"/);
-        if (match) {
-          route = match[1] as RouteType;
+        const routeMatch = text.match(/\{\s*"route"\s*:\s*"(data|advice|general)"/);
+        if (routeMatch) {
+          route = routeMatch[1] as RouteType;
+        }
+        const chirpMatch = text.match(/"chirp"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (chirpMatch && chirpMatch[1].trim().length > 0) {
+          routerChirp = chirpMatch[1].replace(/\\"/g, '"').trim();
         }
       } catch {
         const lower = content.toLowerCase();
@@ -280,7 +286,11 @@ export class AiChatGraphService {
           route = 'advice';
         }
       }
-      const routerChirp = `Let me ask the ${route} agent about your question.`;
+      if (!routerChirp) {
+        const agentLabel =
+          route === 'general' ? 'general assistant' : `${route} agent`;
+        routerChirp = `Let me ask the ${agentLabel} about your question.`;
+      }
       return { route, routerChirp };
     };
 
