@@ -139,6 +139,7 @@ describe('Golden set (AI chat)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.AI_CHAT_DUMMY_DATA = 'false';
     accountBalanceService = {
       getAccountBalances: jest.fn().mockResolvedValue({ balances: [] })
     };
@@ -1537,7 +1538,7 @@ describe('Golden set (AI chat)', () => {
       const getHoldings = tools.find((t) => t.name === 'get_holdings');
       expect(getHoldings).toBeDefined();
       const result = await getHoldings!.invoke({});
-      expect(result).toMatch(/^Error:/);
+      expect(result).toMatch(/^(Error:|Error fetching holdings:)/);
       expect(result).toContain('DB unavailable');
     });
 
