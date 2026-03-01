@@ -366,6 +366,124 @@ describe('AI chat graph & reliability', () => {
       expect(trace.content).not.toMatch(/I cannot access your (information|data)/i);
     });
 
+    it('data agent always invokes status tools (get_total_value, get_holdings, get_portfolio_performance)', async () => {
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('How much money do I have?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      expect(trace.route).toBe('data');
+      const statusToolNames = [
+        'get_total_value',
+        'get_holdings',
+        'get_portfolio_performance'
+      ];
+      for (const name of statusToolNames) {
+        const call = trace.toolCalls.find((tc) => tc.name === name);
+        expect(call).toBeDefined();
+        expect(call!.result).not.toBe('Tool not found.');
+        expect(typeof call!.result).toBe('string');
+        expect(call!.result.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('data agent status tools actually call backend (getDetails and getPerformance)', async () => {
+      portfolioService.getPerformance.mockResolvedValue({
+        performance: {
+          netPerformance: 100,
+          netPerformancePercentage: 5,
+          totalInvestment: 2000,
+          currentNetWorth: 2100,
+          currentValueInBaseCurrency: 2100,
+          netPerformancePercentageWithCurrencyEffect: 5,
+          netPerformanceWithCurrencyEffect: 100,
+          totalInvestmentValueWithCurrencyEffect: 2000
+        }
+      } as never);
+
+      await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('What is my total return?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      expect(portfolioService.getDetails).toHaveBeenCalled();
+      expect(portfolioService.getPerformance).toHaveBeenCalled();
+    });
+
+    it('data agent tool results reflect backend data', async () => {
+      const testValue = 42_500;
+      portfolioService.getDetails.mockResolvedValue({
+        holdings: {},
+        hasErrors: false,
+        summary: { currentValueInBaseCurrency: testValue }
+      } as never);
+
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('How much money do I have?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      const totalCall = trace.toolCalls.find((tc) => tc.name === 'get_total_value');
+      expect(totalCall).toBeDefined();
+      expect(totalCall!.result).toContain(String(testValue));
+    });
+
+    it('advice agent always invokes status tool (get_allocation_summary)', async () => {
+      setUseMockChatOpenAI(true, 'advice');
+      portfolioService.getDetails.mockResolvedValue({
+        holdings: {},
+        hasErrors: false
+      } as never);
+
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('Should I rebalance?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      expect(trace.route).toBe('advice');
+      const allocCall = trace.toolCalls.find(
+        (tc) => tc.name === 'get_allocation_summary'
+      );
+      expect(allocCall).toBeDefined();
+      expect(allocCall!.result).not.toBe('Tool not found.');
+      expect(allocCall!.result.length).toBeGreaterThan(0);
+    });
+
+    it('advice agent status tool calls backend (getDetails)', async () => {
+      setUseMockChatOpenAI(true, 'advice');
+      portfolioService.getDetails.mockResolvedValue({
+        holdings: {},
+        hasErrors: false
+      } as never);
+
+      await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('Am I diversified?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      expect(portfolioService.getDetails).toHaveBeenCalled();
+    });
+
     it('runWithTrace with mocked LLM (advice route) returns toolCalls and no generic refusal', async () => {
       setUseMockChatOpenAI(true, 'advice');
       portfolioService.getDetails.mockResolvedValue({
