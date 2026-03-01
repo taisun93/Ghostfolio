@@ -408,23 +408,19 @@ export class AiChatGraphService {
           { name: 'list_accounts', args: {} },
           { name: 'get_account_balances', args: {} }
         ]);
-      const systemWithContext = `${DATA_AGENT_SYSTEM}
+      const lastUserContent = this.getLastUserContent(state.messages);
+      const systemOnly = `${DATA_AGENT_SYSTEM}
 
-The user's portfolio data is in the message below. You MUST answer from it. Never say you cannot access their information—you already have it. Never respond with "I don't know" or "I'm not sure"—you have the data; give a concrete answer from it.
-
---- Current portfolio context ---
-${contextBlock}
----`;
-      const contextMessage = new HumanMessage(
-        `[Portfolio data - use this to answer the user]\n${contextBlock}`
+Answer using only the data in the user message below. The user message contains portfolio data followed by their question.`;
+      const singleMessageWithDataAndQuestion = new HumanMessage(
+        `Portfolio data:\n${contextBlock}\n\nUser question: ${lastUserContent || 'How can I help?'}`
       );
-      const messagesWithContext = [contextMessage, ...state.messages];
       const modelWithTools = dataModel.bindTools(tools);
       let draftReply: string;
       const { reply, toolCalls: loopCalls } = await this.runToolLoop(
         modelWithTools,
-        messagesWithContext,
-        systemWithContext,
+        [singleMessageWithDataAndQuestion],
+        systemOnly,
         tools
       );
       draftReply = reply;
@@ -454,19 +450,19 @@ ${contextBlock}
         await this.runStatusTools(tools, [
           { name: 'get_allocation_summary', args: {} }
         ]);
-      const systemWithContext = `${ADVICE_AGENT_SYSTEM}
+      const lastUserContent = this.getLastUserContent(state.messages);
+      const systemOnly = `${ADVICE_AGENT_SYSTEM}
 
-Your allocation data is in the block below. Answer from it. Never say "I don't know" or "I'm not sure"—you have the data; give a concrete answer.
-
---- Current allocation context (use this to answer; do not say you cannot access it) ---
-${contextBlock}
----`;
+Answer using only the allocation data in the user message below. The user message contains the data followed by their question.`;
+      const singleMessageWithDataAndQuestion = new HumanMessage(
+        `Allocation data:\n${contextBlock}\n\nUser question: ${lastUserContent || 'How can I help?'}`
+      );
       const modelWithTools = adviceModel.bindTools(tools);
       let draftReply: string;
       const { reply, toolCalls: loopCalls } = await this.runToolLoop(
         modelWithTools,
-        state.messages,
-        systemWithContext,
+        [singleMessageWithDataAndQuestion],
+        systemOnly,
         tools
       );
       draftReply = reply;
@@ -591,6 +587,14 @@ ${contextBlock}
     graph.addEdge('compliance', '__end__');
 
     return graph.compile();
+  }
+
+  private getLastUserContent(messages: BaseMessage[]): string {
+    const lastUser = [...messages]
+      .reverse()
+      .find((m) => (m as { _getType?: () => string })._getType?.() === 'human');
+    const content = (lastUser as { content?: unknown } | undefined)?.content;
+    return typeof content === 'string' ? content : '';
   }
 
   private formatReplyFromPreloadedData(calls: ToolCallRecord[]): string {
