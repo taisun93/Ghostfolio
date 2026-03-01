@@ -44,19 +44,17 @@ export async function POST(req: Request) {
 
   const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (connectionString) {
-    void (async () => {
-      try {
-        const sql = neon(connectionString);
-        await ensureTable(sql);
-        const now = new Date().toISOString();
-        await sql`
-          INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
-          VALUES (${userId}, '[]'::jsonb, ${now}::timestamptz)
-        `;
-      } catch (err) {
-        console.error('AI chat new background', err);
-      }
-    })();
+    try {
+      const sql = neon(connectionString);
+      await ensureTable(sql);
+      const now = new Date().toISOString();
+      await sql`
+        INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
+        VALUES (${userId}, '[]'::jsonb, ${now}::timestamptz)
+      `;
+    } catch (err) {
+      console.error('AI chat new Postgres', err);
+    }
   }
 
   return new Response(JSON.stringify({ ok: true }), {

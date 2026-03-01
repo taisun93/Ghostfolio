@@ -1,7 +1,7 @@
 /**
  * GET: return messages from the user's latest conversation (one-to-many: user -> conversations).
  * POST: append one message to the latest conversation (or create one); entire conversation stored as JSON. Processing on server.
- * Requires Bearer token. Uses in-memory store for fast response; Postgres is updated in the background (POSTGRES_URL or DATABASE_URL).
+ * Requires Bearer token. Uses in-memory store for fast response; Postgres is updated before response (POSTGRES_URL or DATABASE_URL) so writes complete on Vercel serverless.
  */
 import { neon } from '@neondatabase/serverless';
 
@@ -44,43 +44,41 @@ function parseMessages(messages: unknown): MessageRow[] {
   );
 }
 
-/** Persist messages to Postgres in the background. Uses getMessagesSnapshot() when the job runs so we write the latest state (avoids race when multiple POSTs run). */
-function persistToPostgresInBackground(
+/** Persist messages to Postgres. Must be awaited before returning response so the write completes on serverless (Vercel). */
+async function persistToPostgres(
   connectionString: string,
   userId: string,
   getMessagesSnapshot: () => MessageRow[]
-): void {
-  void (async () => {
-    try {
-      const messages = getMessagesSnapshot();
-      const now = new Date().toISOString();
-      const sql = neon(connectionString);
-      await ensureTable(sql);
-      const rows = await sql`
-        SELECT id
-        FROM ai_chat_conversations
-        WHERE user_id = ${userId}
-        ORDER BY updated_at DESC
-        LIMIT 1
+): Promise<void> {
+  try {
+    const messages = getMessagesSnapshot();
+    const now = new Date().toISOString();
+    const sql = neon(connectionString);
+    await ensureTable(sql);
+    const rows = await sql`
+      SELECT id
+      FROM ai_chat_conversations
+      WHERE user_id = ${userId}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    const rowId = row && typeof row === 'object' && 'id' in row ? String((row as { id: unknown }).id) : null;
+    if (rowId) {
+      await sql`
+        UPDATE ai_chat_conversations
+        SET messages = ${JSON.stringify(messages)}::jsonb, updated_at = ${now}::timestamptz
+        WHERE id = ${rowId}
       `;
-      const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-      const rowId = row && typeof row === 'object' && 'id' in row ? String((row as { id: unknown }).id) : null;
-      if (rowId) {
-        await sql`
-          UPDATE ai_chat_conversations
-          SET messages = ${JSON.stringify(messages)}::jsonb, updated_at = ${now}::timestamptz
-          WHERE id = ${rowId}
-        `;
-      } else {
-        await sql`
-          INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
-          VALUES (${userId}, ${JSON.stringify(messages)}::jsonb, ${now}::timestamptz)
-        `;
-      }
-    } catch (err) {
-      console.error('AI chat Postgres persist failed', err);
+    } else {
+      await sql`
+        INSERT INTO ai_chat_conversations (user_id, messages, updated_at)
+        VALUES (${userId}, ${JSON.stringify(messages)}::jsonb, ${now}::timestamptz)
+      `;
     }
-  })();
+  } catch (err) {
+    console.error('AI chat Postgres persist failed', err);
+  }
 }
 
 export async function GET(req: Request) {
@@ -180,10 +178,10 @@ export async function POST(req: Request) {
   appendMessage(userId, newMessage);
   const updated = getMessages(userId)!;
 
-  // Persist to Postgres in the background; pass getter so we write latest state when the job runs.
+  // Persist to Postgres before returning so the write completes on serverless (Vercel).
   const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (connectionString) {
-    persistToPostgresInBackground(connectionString, userId, () => getMessages(userId) ?? []);
+    await persistToPostgres(connectionString, userId, () => getMessages(userId) ?? []);
   }
 
   return new Response(
