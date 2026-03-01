@@ -6,7 +6,7 @@ import { DataProviderService } from '@ghostfolio/api/services/data-provider/data
 import { MarketDataService } from '@ghostfolio/api/services/market-data/market-data.service';
 import type { Filter } from '@ghostfolio/common/interfaces';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { BaseMessage } from '@langchain/core/messages';
 import {
   AIMessage,
@@ -79,13 +79,24 @@ const COMPLIANCE_BLOCK_PATTERNS = [
 const COMPLIANCE_BLOCK_MESSAGE =
   "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
 
-/** Hard block: never return these phrases from the data agent. We have or attempted to load portfolio context. */
+/** Hard block: never return these phrases. Covers "I can't access your financial info" and redirects to bank/apps. */
 const REFUSAL_WHEN_HAVING_DATA =
-  /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?financial|don't have access to (your )?(account|portfolio|financial)|check your bank (account|statements)|log into your (online )?banking/i;
+  /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?financial|don't have access to (your )?(account|portfolio|financial)|check your bank (account|statements)|log into your (online )?banking|to find out how much money you have|check your (bank |investment )?account|investment accounts? (you )?use|financial apps? (you )?use|any financial apps|If you need help with budgeting|managing your finances,?\s*(feel )?free to ask/i;
 
-/** IDK / non-answer we never want when we have data in context. */
+/** IDK / non-answer we never want. */
 const IDK_OR_NON_ANSWER =
   /I don't know|I do not know|I'm not sure|I am not sure|I don't have (that )?information|I do not have (that )?information|I (can't|cannot) (tell|provide|say|help with that)|I'm (unable|not able) to (tell|provide|say)|I (don't|do not) have (access to )?(that )?data|no (information|data) (available|to share)/i;
+
+/** Fallback when we must never show a refusal/IDK reply and have no preloaded data (e.g. general path). */
+const FALLBACK_NEVER_REFUSAL =
+  "I'd be happy to help with your portfolio. Try asking: \"How much money do I have?\", \"What's my allocation?\", or \"List my holdings.\"";
+
+/** Returns true if content is a forbidden refusal/IDK reply—we never send this to the user. */
+export function isForbiddenRefusalOrIdk(content: string): boolean {
+  const text = (content || '').trim();
+  if (!text) return false;
+  return REFUSAL_WHEN_HAVING_DATA.test(text) || IDK_OR_NON_ANSWER.test(text);
+}
 
 /** Exported for tests. Returns true when user input matches high-risk scam/fraud patterns (always block, no LLM call). */
 export function shouldBlockByInput(userContent: string): boolean {
@@ -124,6 +135,8 @@ const GRAPH_TIMEOUT_MS = 55_000;
 
 @Injectable()
 export class AiChatGraphService {
+  private readonly logger = new Logger(AiChatGraphService.name);
+
   public constructor(
     private readonly accountBalanceService: AccountBalanceService,
     private readonly accountService: AccountService,
@@ -387,12 +400,20 @@ export class AiChatGraphService {
       if (!routerChirp?.trim()) {
         routerChirp = getDefaultChirpForRoute(route);
       }
+      const nextNode =
+        route === 'data'
+          ? 'data_agent'
+          : route === 'advice'
+            ? 'advice_agent'
+            : 'general_agent';
+      this.logger.log(`router → ${nextNode} (route=${route})`);
       return { route, routerChirp };
     };
 
     const dataAgent = async (
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
+      this.logger.log('data_agent entered');
       const tools = createDataAgentTools(services, {
         filters: state.filters,
         impersonationId: state.impersonationId,
@@ -429,13 +450,19 @@ Answer using only the data in the user message below. The user message contains 
         IDK_OR_NON_ANSWER.test(draftReply);
       if (isBlockedReply) {
         draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
+        this.logger.log('data_agent return: refusal/IDK replaced with preloaded data');
       }
-      return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
+      const toolCallsResult = [...preloadedCalls, ...loopCalls];
+      this.logger.log(
+        `data_agent return → compliance (draftReply length=${draftReply.length}, toolCalls=${toolCallsResult.map((c) => c.name).join(', ')})`
+      );
+      return { draftReply, toolCalls: toolCallsResult };
     };
 
     const adviceAgent = async (
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
+      this.logger.log('advice_agent entered');
       const tools = createAdvisorAgentTools(
         { portfolioService: this.portfolioService },
         {
@@ -478,26 +505,46 @@ Answer using only the allocation data in the user message below. The user messag
         IDK_OR_NON_ANSWER.test(draftReply);
       if (isRefusalOrIdkAdvice && hasUsableAllocation) {
         draftReply = `Based on your allocation: ${allocCall.result}`;
+        this.logger.log('advice_agent return: refusal/IDK replaced with allocation summary');
       }
-      return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
+      const adviceToolCalls = [...preloadedCalls, ...loopCalls];
+      this.logger.log(
+        `advice_agent return → compliance (draftReply length=${draftReply.length}, toolCalls=${adviceToolCalls.map((c) => c.name).join(', ')})`
+      );
+      return { draftReply, toolCalls: adviceToolCalls };
     };
 
     const generalAgent = async (
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
+      this.logger.log('general_agent entered');
       const prompt = [
         new SystemMessage(GENERAL_AGENT_SYSTEM),
         ...state.messages
       ];
       const out = await generalModel.invoke(prompt);
-      const draftReply =
+      let draftReply =
         typeof out.content === 'string' ? out.content : String(out.content ?? '');
+      if (isForbiddenRefusalOrIdk(draftReply)) {
+        draftReply = FALLBACK_NEVER_REFUSAL;
+        this.logger.log('general_agent return: refusal/IDK replaced with fallback');
+      }
+      this.logger.log(
+        `general_agent return → compliance (draftReply length=${draftReply.length})`
+      );
       return { draftReply, toolCalls: [] };
     };
 
     const compliance = async (
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
+      const fromAgent =
+        state.route === 'data'
+          ? 'data_agent'
+          : state.route === 'advice'
+            ? 'advice_agent'
+            : 'general_agent';
+      this.logger.log(`compliance entered (draft from ${fromAgent})`);
       const draftReply = state.draftReply ?? '';
       const lastUser = [...state.messages]
         .reverse()
@@ -561,6 +608,15 @@ Answer using only the allocation data in the user message below. The user messag
       } else {
         finalContent = draftReply;
       }
+      if (isForbiddenRefusalOrIdk(finalContent)) {
+        finalContent = FALLBACK_NEVER_REFUSAL;
+        this.logger.warn(
+          'compliance: finalContent was forbidden refusal/IDK → replaced with fallback'
+        );
+      }
+      this.logger.log(
+        `compliance return (decision=${decision}) → __end__ (finalContent length=${finalContent.length})`
+      );
       return {
         complianceDecision: decision,
         complianceMessage,

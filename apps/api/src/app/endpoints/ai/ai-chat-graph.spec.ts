@@ -21,6 +21,7 @@ import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
   AiChatGraphService,
   getDataRouteFallback,
+  isForbiddenRefusalOrIdk,
   shouldBlockByInput,
   EXPORTED_CURRENT_STATUS_RULE,
   EXPORTED_DATA_AGENT_SYSTEM,
@@ -235,6 +236,26 @@ describe('AI chat graph & reliability', () => {
       expect(EXPORTED_ADVICE_AGENT_SYSTEM).toContain(EXPORTED_CURRENT_STATUS_RULE);
       expect(EXPORTED_ADVICE_AGENT_SYSTEM).toMatch(/allocation|holdings/i);
       expect(EXPORTED_ADVICE_AGENT_SYSTEM).toMatch(/before advising/i);
+    });
+  });
+
+  describe('isForbiddenRefusalOrIdk', () => {
+    const exactRefusalMessage =
+      "I'm unable to access personal financial information or accounts. To find out how much money you have, you can check your bank account, investment accounts, or any financial apps you use. If you need help with budgeting or managing your finances, feel free to ask!";
+
+    it('detects the exact refusal message so API never returns it', () => {
+      expect(isForbiddenRefusalOrIdk(exactRefusalMessage)).toBe(true);
+    });
+
+    it('detects common refusal fragments', () => {
+      expect(isForbiddenRefusalOrIdk("I'm unable to access your accounts.")).toBe(true);
+      expect(isForbiddenRefusalOrIdk('Check your bank account for balance.')).toBe(true);
+      expect(isForbiddenRefusalOrIdk("I don't have access to that data.")).toBe(true);
+    });
+
+    it('allows normal portfolio answers', () => {
+      expect(isForbiddenRefusalOrIdk('Your total value is 10,000 USD.')).toBe(false);
+      expect(isForbiddenRefusalOrIdk('Based on your allocation: 60% stocks.')).toBe(false);
     });
   });
 
