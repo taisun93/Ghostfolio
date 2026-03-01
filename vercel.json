@@ -1,4 +1,10 @@
 {
   "buildCommand": "npm run build:production",
-  "outputDirectory": "dist/apps/client"
+  "outputDirectory": "dist/apps/client",
+  "rewrites": [
+    {
+      "source": "^/(ca|de|en|es|fr|it|ko|nl|pl|pt|tr|uk|zh)(/.*)?$",
+      "destination": "/$1/index.html"
+    }
+  ]
 }
