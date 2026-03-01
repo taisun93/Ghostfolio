@@ -23,6 +23,7 @@ import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
   AiChatGraphService,
   getDataRouteFallback,
+  getDefaultChirpForRoute,
   shouldBlockByInput
 } from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
@@ -553,6 +554,133 @@ describe('Golden set (AI chat)', () => {
         expect(result.content).not.toMatch(
           /unable to access personal financial|I'm unable to access|I can't (access|tell|see) (your )?financial/i
         );
+      }
+    );
+  });
+
+  describe('Chirp (router message) — must be present and meaningful', () => {
+    /** Chirp must mention which agent/assistant; fail if graph returns none or empty. */
+    const CHIRP_MUST_MENTION_AGENT = /(data|advice|general)\s+agent|general\s+assistant/i;
+
+    itWithKey(
+      'run() returns a non-empty chirp for a data-route question (allocation)',
+      async () => {
+        propertyService.getByKey.mockResolvedValue(getOpenAiKey()!);
+        portfolioService.getDetails.mockResolvedValue({
+          ...EMPTY_PORTFOLIO
+        } as never);
+
+        const result = await aiChatGraphService.run({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's my portfolio allocation?")],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+
+        expect(result.chirp).toBeDefined();
+        expect(typeof result.chirp).toBe('string');
+        expect(result.chirp!.trim().length).toBeGreaterThan(0);
+        expect(result.chirp).toMatch(CHIRP_MUST_MENTION_AGENT);
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
+      }
+    );
+
+    itWithKey(
+      'runWithTrace() always includes routerChirp for data route; fails if chirp missing',
+      async () => {
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('How much money do I have?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+
+        expect(trace.route).toBe('data');
+        expect(trace.routerChirp).toBeDefined();
+        expect(typeof trace.routerChirp).toBe('string');
+        expect(trace.routerChirp!.trim().length).toBeGreaterThan(0);
+        expect(trace.routerChirp).toMatch(CHIRP_MUST_MENTION_AGENT);
+      }
+    );
+
+    itWithKey(
+      'runStream() yields a chirp chunk before any content chunk',
+      async () => {
+        const chunks: { chirp?: string; content?: string }[] = [];
+        for await (const chunk of aiChatGraphService.runStream({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Hi')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        })) {
+          chunks.push(chunk);
+        }
+
+        const chirpChunks = chunks.filter((c) => c.chirp != null && c.chirp !== '');
+        const contentChunks = chunks.filter((c) => c.content != null);
+
+        expect(chirpChunks.length).toBeGreaterThanOrEqual(1);
+        expect(contentChunks.length).toBeGreaterThanOrEqual(1);
+        const firstChirpIndex = chunks.findIndex((c) => c.chirp != null && c.chirp !== '');
+        const firstContentIndex = chunks.findIndex((c) => c.content != null);
+        expect(firstChirpIndex).toBeLessThan(firstContentIndex);
+
+        const chirpText = chirpChunks[0].chirp!;
+        expect(chirpText.trim().length).toBeGreaterThan(0);
+        expect(chirpText).toMatch(CHIRP_MUST_MENTION_AGENT);
+      }
+    );
+
+    itWithKey(
+      'run() returns a non-empty chirp for advice route (rebalance)',
+      async () => {
+        propertyService.getByKey.mockResolvedValue(getOpenAiKey()!);
+        portfolioService.getDetails.mockResolvedValue({
+          ...PORTFOLIO_FIXTURE
+        } as never);
+
+        const result = await aiChatGraphService.run({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Should I rebalance my portfolio?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+
+        expect(result.chirp).toBeDefined();
+        expect(typeof result.chirp).toBe('string');
+        expect(result.chirp!.trim().length).toBeGreaterThan(0);
+        expect(result.chirp).toMatch(/advice\s+agent|general\s+assistant/i);
+        expect(result.content).toBeDefined();
+      }
+    );
+
+    itWithKey(
+      'run() returns a non-empty chirp for general route (greeting)',
+      async () => {
+        const result = await aiChatGraphService.run({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Hello')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+
+        expect(result.chirp).toBeDefined();
+        expect(typeof result.chirp).toBe('string');
+        expect(result.chirp!.trim().length).toBeGreaterThan(0);
+        expect(result.chirp).toMatch(CHIRP_MUST_MENTION_AGENT);
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
       }
     );
   });
@@ -1515,12 +1643,16 @@ describe('Golden set (AI chat)', () => {
       expect(getDataRouteFallback('how much am i worth')).toBe('data');
     });
 
-    it('router chirp format: "Let me ask the X agent" for each route', () => {
-      const chirpFor = (route: 'data' | 'advice' | 'general') =>
-        `Let me ask the ${route} agent about your question.`;
-      expect(chirpFor('data')).toBe('Let me ask the data agent about your question.');
-      expect(chirpFor('advice')).toBe('Let me ask the advice agent about your question.');
-      expect(chirpFor('general')).toBe('Let me ask the general agent about your question.');
+    it('getDefaultChirpForRoute returns "Let me ask the X agent" for each route', () => {
+      expect(getDefaultChirpForRoute('data')).toBe(
+        'Let me ask the data agent about your question.'
+      );
+      expect(getDefaultChirpForRoute('advice')).toBe(
+        'Let me ask the advice agent about your question.'
+      );
+      expect(getDefaultChirpForRoute('general')).toBe(
+        'Let me ask the general assistant about your question.'
+      );
     });
 
     it('get_total_value tool with dummy data returns total value and currency', async () => {

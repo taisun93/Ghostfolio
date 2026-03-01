@@ -85,6 +85,13 @@ export function getDataRouteFallback(content: string): RouteType | null {
   return null;
 }
 
+/** Guaranteed chirp text for a route. Used when the router LLM returns no chirp or empty. Exported for tests. */
+export function getDefaultChirpForRoute(route: RouteType): string {
+  const agentLabel =
+    route === 'general' ? 'general assistant' : `${route} agent`;
+  return `Let me ask the ${agentLabel} about your question.`;
+}
+
 /** Max time for the full graph (router + agent + compliance). Prevents runaway requests. */
 const GRAPH_TIMEOUT_MS = 55_000;
 
@@ -122,8 +129,12 @@ export class AiChatGraphService {
       userCurrency,
       userId
     });
+    const route = result.route ?? 'general';
+    const chirp =
+      result.routerChirp?.trim() ||
+      getDefaultChirpForRoute(route);
     return {
-      chirp: result.routerChirp,
+      chirp,
       content: result.finalContent ?? ''
     };
   }
@@ -171,9 +182,12 @@ export class AiChatGraphService {
       for (const nodeName of Object.keys(update)) {
         const state = update[nodeName];
         if (!state) continue;
-        if (nodeName === 'router' && state.routerChirp != null && state.routerChirp !== '' && !chirpEmitted) {
+        if (nodeName === 'router' && !chirpEmitted) {
           chirpEmitted = true;
-          yield { chirp: state.routerChirp };
+          const route = state.route ?? 'general';
+          const chirp =
+            state.routerChirp?.trim() || getDefaultChirpForRoute(route);
+          yield { chirp };
         }
         if (nodeName === 'compliance' && state.finalContent != null) {
           yield { content: state.finalContent };
@@ -214,10 +228,13 @@ export class AiChatGraphService {
       userCurrency,
       userId
     });
+    const route = result.route ?? 'general';
+    const routerChirp =
+      result.routerChirp?.trim() || getDefaultChirpForRoute(route);
     return {
       content: result.finalContent ?? '',
-      route: result.route ?? 'general',
-      routerChirp: result.routerChirp,
+      route,
+      routerChirp,
       toolCalls: result.toolCalls ?? []
     };
   }
@@ -340,10 +357,8 @@ export class AiChatGraphService {
           route = 'advice';
         }
       }
-      if (!routerChirp) {
-        const agentLabel =
-          route === 'general' ? 'general assistant' : `${route} agent`;
-        routerChirp = `Let me ask the ${agentLabel} about your question.`;
+      if (!routerChirp?.trim()) {
+        routerChirp = getDefaultChirpForRoute(route);
       }
       return { route, routerChirp };
     };
