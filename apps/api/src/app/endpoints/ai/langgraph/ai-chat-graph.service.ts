@@ -73,7 +73,9 @@ const COMPLIANCE_BLOCK_PATTERNS = [
   /\b(wire|transfer|send)\s+(money|funds|crypto|bitcoin)\s+(urgently|immediately|asap|now)\b/i,
   /\burgent(ly)?\s+(wire|transfer|payment|send)\b/i,
   /\b(wire|transfer)\s+.*\s+(urgently|secure\s+account)\b/i,
-  /\bsend\s+(crypto|bitcoin|money)\s+to\b/i
+  /\bsend\s+(crypto|bitcoin|money)\s+to\b/i,
+  /\b(send|transfer)\s+.*\s+to\s+(this\s+)?IBAN/i,
+  /\b(send|transfer)\s+(\$|\d+[\d,.]*)\s*(k|m|usd|eur|dollars?|euros?)?\s+to\b/i
 ];
 
 const COMPLIANCE_BLOCK_MESSAGE =

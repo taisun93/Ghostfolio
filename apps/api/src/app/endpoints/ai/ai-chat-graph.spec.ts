@@ -564,7 +564,7 @@ describe('AI chat graph & reliability', () => {
       });
 
       it('runStream() content chunk ends with compliance QA suffix (proves compliance node ran)', async () => {
-        setUseMockChatOpenAI(true, 'general');
+        setUseMockChatOpenAI(true, 'data');
         const chunks: { chirp?: string; content?: string }[] = [];
         for await (const chunk of aiChatGraphService.runStream({
           filters: BASE_PARAMS.filters,
