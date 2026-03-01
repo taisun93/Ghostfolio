@@ -33,6 +33,7 @@ import { CustomDateAdapter } from './app/adapter/custom-date-adapter';
 import { DateFormats } from './app/adapter/date-formats';
 import { GfAppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
+import { apiBaseUrlInterceptorProviders } from './app/core/api-base-url.interceptor';
 import { authInterceptorProviders } from './app/core/auth.interceptor';
 import { httpResponseInterceptorProviders } from './app/core/http-response.interceptor';
 import { LanguageService } from './app/core/language.service';
@@ -60,6 +61,7 @@ import { environment } from './environments/environment';
 
   await bootstrapApplication(GfAppComponent, {
     providers: [
+      apiBaseUrlInterceptorProviders,
       authInterceptorProviders,
       httpResponseInterceptorProviders,
       importProvidersFrom(

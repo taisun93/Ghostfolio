@@ -25,7 +25,15 @@ import {
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { TokenStorageService } from '@ghostfolio/client/services/token-storage.service';
 
+import { environment } from '../../../environments/environment';
+
 import { parrotResponse } from './parrot-agent';
+
+/** Base URL for API requests. When set (e.g. Nest backend), stream and other AI calls go there. */
+function getApiBaseUrl(): string {
+  const base = environment.apiBaseUrl?.trim();
+  return base ? base.replace(/\/$/, '') : '';
+}
 
 export interface ChatMessage {
   id: string;
@@ -155,11 +163,19 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
     }
 
     try {
-      const res = await fetch('/api/v1/ai/chat/stream', {
+      const streamUrl = getApiBaseUrl()
+        ? `${getApiBaseUrl()}/api/v1/ai/chat/stream`
+        : '/api/v1/ai/chat/stream';
+      const res = await fetch(streamUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({ messages: messagesForApi })
       });
+
+      const aiSource = res.headers.get('X-Ghostfolio-AI-Source');
+      if (aiSource !== null && aiSource !== undefined) {
+        console.debug('[Ghostfolio AI] Response from:', aiSource, '(edge = no portfolio data, nest = full backend)');
+      }
 
       if (!res.ok) {
         this.ngZone.run(() => {

@@ -10,6 +10,9 @@
  * money do I have" etc. the model has no account data, so it often refuses; we replace that with a
  * short fallback. To get real portfolio answers: in vercel.json add a rewrite so /api/* goes to your
  * Nest backend (e.g. "destination": "https://your-ghostfolio-api.up.railway.app/api/:path*").
+ *
+ * Diagnosis: response includes header X-Ghostfolio-AI-Source: edge (Nest sends X-Ghostfolio-AI-Source: nest).
+ * In browser DevTools → Network → select the stream request → Response Headers to see which path served you.
  */
 export const config = { runtime: 'edge' };
 
@@ -105,6 +108,7 @@ export async function POST(req: Request) {
     });
   }
 
+  console.log('[OpenAI] Edge AI stream invoked (no portfolio tools)');
   const apiKey = (
     process.env.OPENAI_API_KEY ??
     process.env.API_KEY_OPENAI
@@ -290,7 +294,8 @@ export async function POST(req: Request) {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      Connection: 'keep-alive'
+      Connection: 'keep-alive',
+      'X-Ghostfolio-AI-Source': 'edge'
     }
   });
 }
