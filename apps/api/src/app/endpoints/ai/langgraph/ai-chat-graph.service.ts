@@ -83,6 +83,10 @@ const COMPLIANCE_BLOCK_MESSAGE =
 const REFUSAL_WHEN_HAVING_DATA =
   /unable to access (personal )?financial|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (your )?financial|do not have access to (your )?financial|don't have access to (your )?(account|portfolio|financial)/i;
 
+/** IDK / non-answer we never want when we have data in context. */
+const IDK_OR_NON_ANSWER =
+  /I don't know|I do not know|I'm not sure|I am not sure|I don't have (that )?information|I do not have (that )?information|I (can't|cannot) (tell|provide|say|help with that)|I'm (unable|not able) to (tell|provide|say)|I (don't|do not) have (access to )?(that )?data|no (information|data) (available|to share)/i;
+
 /** Exported for tests. Returns true when user input matches high-risk scam/fraud patterns (always block, no LLM call). */
 export function shouldBlockByInput(userContent: string): boolean {
   const text = (userContent || '').trim();
@@ -406,7 +410,7 @@ export class AiChatGraphService {
         ]);
       const systemWithContext = `${DATA_AGENT_SYSTEM}
 
-The user's portfolio data is in the message below. You MUST answer from it. Never say you cannot access their information—you already have it.
+The user's portfolio data is in the message below. You MUST answer from it. Never say you cannot access their information—you already have it. Never respond with "I don't know" or "I'm not sure"—you have the data; give a concrete answer from it.
 
 --- Current portfolio context ---
 ${contextBlock}
@@ -423,13 +427,15 @@ ${contextBlock}
         systemWithContext,
         tools
       );
-      if (this.hasUsablePreloadedData(preloadedCalls)) {
+      draftReply = reply;
+      const isRefusalOrIdk =
+        REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
+        IDK_OR_NON_ANSWER.test(draftReply);
+      if (
+        isRefusalOrIdk &&
+        this.hasUsablePreloadedData(preloadedCalls)
+      ) {
         draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
-      } else {
-        draftReply = reply;
-        if (REFUSAL_WHEN_HAVING_DATA.test(draftReply)) {
-          draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
-        }
       }
       return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
     };
@@ -453,16 +459,33 @@ ${contextBlock}
         ]);
       const systemWithContext = `${ADVICE_AGENT_SYSTEM}
 
+Your allocation data is in the block below. Answer from it. Never say "I don't know" or "I'm not sure"—you have the data; give a concrete answer.
+
 --- Current allocation context (use this to answer; do not say you cannot access it) ---
 ${contextBlock}
 ---`;
       const modelWithTools = adviceModel.bindTools(tools);
-      const { reply: draftReply, toolCalls: loopCalls } = await this.runToolLoop(
+      let draftReply: string;
+      const { reply, toolCalls: loopCalls } = await this.runToolLoop(
         modelWithTools,
         state.messages,
         systemWithContext,
         tools
       );
+      draftReply = reply;
+      const allocCall = preloadedCalls.find(
+        (c) => c.name === 'get_allocation_summary'
+      );
+      const hasUsableAllocation =
+        allocCall?.result &&
+        !allocCall.result.startsWith('Error') &&
+        allocCall.result.length > 0;
+      const isRefusalOrIdkAdvice =
+        REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
+        IDK_OR_NON_ANSWER.test(draftReply);
+      if (isRefusalOrIdkAdvice && hasUsableAllocation) {
+        draftReply = `Based on your allocation: ${allocCall.result}`;
+      }
       return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
     };
 
@@ -636,15 +659,14 @@ ${contextBlock}
     if (balances?.result && !balances.result.startsWith('Error')) {
       parts.push(`Balances: ${balances.result}`);
     }
+    const holdings = calls.find((c) => c.name === 'get_holdings');
+    if (holdings?.result && !holdings.result.startsWith('Error')) {
+      parts.push(holdings.result);
+    }
     if (parts.length === 0) {
-      const holdings = calls.find((c) => c.name === 'get_holdings');
-      if (holdings?.result && !holdings.result.startsWith('Error')) {
-        parts.push(holdings.result);
-      } else {
-        parts.push(
-          "We couldn't load your portfolio data right now. Please check that your accounts are connected and try again."
-        );
-      }
+      parts.push(
+        "We couldn't load your portfolio data right now. Please check that your accounts are connected and try again."
+      );
     }
     return parts.join(' ');
   }
