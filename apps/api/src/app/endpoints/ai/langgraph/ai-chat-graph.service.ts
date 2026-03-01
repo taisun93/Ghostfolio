@@ -79,9 +79,9 @@ const COMPLIANCE_BLOCK_PATTERNS = [
 const COMPLIANCE_BLOCK_MESSAGE =
   "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
 
-/** Refusal phrase we never want when we already have portfolio context. Match common model phrasings. */
+/** Hard block: never return these phrases from the data agent. We have or attempted to load portfolio context. */
 const REFUSAL_WHEN_HAVING_DATA =
-  /unable to access (personal )?financial|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (your )?financial|do not have access to (your )?financial|don't have access to (your )?(account|portfolio|financial)/i;
+  /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?financial|don't have access to (your )?(account|portfolio|financial)|check your bank (account|statements)|log into your (online )?banking/i;
 
 /** IDK / non-answer we never want when we have data in context. */
 const IDK_OR_NON_ANSWER =
@@ -428,13 +428,10 @@ ${contextBlock}
         tools
       );
       draftReply = reply;
-      const isRefusalOrIdk =
+      const isBlockedReply =
         REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
         IDK_OR_NON_ANSWER.test(draftReply);
-      if (
-        isRefusalOrIdk &&
-        this.hasUsablePreloadedData(preloadedCalls)
-      ) {
+      if (isBlockedReply) {
         draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
       }
       return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
@@ -594,24 +591,6 @@ ${contextBlock}
     graph.addEdge('compliance', '__end__');
 
     return graph.compile();
-  }
-
-  /** True if any preloaded tool returned usable (non-error) data. */
-  private hasUsablePreloadedData(calls: ToolCallRecord[]): boolean {
-    const statusNames = [
-      'get_total_value',
-      'get_holdings',
-      'get_portfolio_performance',
-      'list_accounts',
-      'get_account_balances'
-    ];
-    return calls.some(
-      (c) =>
-        statusNames.includes(c.name) &&
-        c.result != null &&
-        c.result.length > 0 &&
-        !c.result.startsWith('Error')
-    );
   }
 
   private formatReplyFromPreloadedData(calls: ToolCallRecord[]): string {
