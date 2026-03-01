@@ -79,6 +79,10 @@ const COMPLIANCE_BLOCK_PATTERNS = [
 const COMPLIANCE_BLOCK_MESSAGE =
   "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
 
+/** Appended to every compliance output to indicate QA for compliance and safety. */
+const COMPLIANCE_QA_SUFFIX =
+  'This message has been reviewed for compliance and safety.';
+
 /** Hard block: never return these phrases. Covers "I can't access your financial info" and redirects to bank/apps. */
 const REFUSAL_WHEN_HAVING_DATA =
   /unable to access (personal )?financial|unable to access.*(information or )?accounts|I'm unable to access|I am unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (you )?(your )?financial|can't tell you how much|do not have access to (your )?financial|don't have access to (your )?(account|portfolio|financial)|check your bank (account|statements)|log into your (online )?banking|to find out how much money you have|check your (bank |investment )?account|investment accounts? (you )?use|financial apps? (you )?use|any financial apps|If you need help with budgeting|managing your finances,?\s*(feel )?free to ask/i;
@@ -556,7 +560,7 @@ Answer using only the allocation data in the user message below. The user messag
         return {
           complianceDecision: 'block',
           complianceMessage: COMPLIANCE_BLOCK_MESSAGE,
-          finalContent: COMPLIANCE_BLOCK_MESSAGE
+          finalContent: `${COMPLIANCE_BLOCK_MESSAGE}\n\n${COMPLIANCE_QA_SUFFIX}`
         };
       }
 
@@ -614,6 +618,7 @@ Answer using only the allocation data in the user message below. The user messag
           'compliance: finalContent was forbidden refusal/IDK → replaced with fallback'
         );
       }
+      finalContent = `${finalContent.trimEnd()}\n\n${COMPLIANCE_QA_SUFFIX}`;
       this.logger.log(
         `compliance return (decision=${decision}) → __end__ (finalContent length=${finalContent.length})`
       );
