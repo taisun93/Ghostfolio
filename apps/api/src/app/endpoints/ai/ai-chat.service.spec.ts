@@ -517,6 +517,11 @@ describe('Golden set (AI chat)', () => {
         });
 
         expect(trace.route).toBe('data');
+        expect(trace.routerChirp).toBeDefined();
+        expect(trace.routerChirp).toMatch(/data agent/i);
+        expect(trace.content).not.toMatch(
+          /unable to access personal financial|I'm unable to access|I can't (access|tell|see) (your )?financial/i
+        );
         const valueToolNames = [
           'get_total_value',
           'get_holdings',
@@ -532,6 +537,21 @@ describe('Golden set (AI chat)', () => {
           /\d+/.test(trace.content) ||
           /total|value|worth|money|16,?250|16250/i.test(trace.content);
         expect(hasNumberOrValue).toBe(true);
+      }
+    );
+
+    itWithKey(
+      '"how much money i got" response content starts with router chirp and is from data agent',
+      async () => {
+        propertyService.getByKey.mockResolvedValue(getOpenAiKey());
+        const result = await aiChatService.chat({
+          ...BASE_PARAMS,
+          messages: [{ role: 'user', content: 'how much money i got' }]
+        });
+        expect(result.content).toMatch(/Let me ask the data agent about your question\./);
+        expect(result.content).not.toMatch(
+          /unable to access personal financial|I'm unable to access|I can't (access|tell|see) (your )?financial/i
+        );
       }
     );
   });
@@ -1492,6 +1512,14 @@ describe('Golden set (AI chat)', () => {
       expect(getDataRouteFallback('How much money do I have?')).toBe('data');
       expect(getDataRouteFallback('what is my total value')).toBe('data');
       expect(getDataRouteFallback('how much am i worth')).toBe('data');
+    });
+
+    it('router chirp format: "Let me ask the X agent" for each route', () => {
+      const chirpFor = (route: 'data' | 'advice' | 'general') =>
+        `Let me ask the ${route} agent about your question.`;
+      expect(chirpFor('data')).toBe('Let me ask the data agent about your question.');
+      expect(chirpFor('advice')).toBe('Let me ask the advice agent about your question.');
+      expect(chirpFor('general')).toBe('Let me ask the general agent about your question.');
     });
 
     it('get_total_value tool with dummy data returns total value and currency', async () => {

@@ -54,6 +54,11 @@ export const ChatGraphStateAnnotation = Annotation.Root({
     reducer: replace,
     default: () => undefined
   }),
+  /** Shown to user before agent reply: "Let me ask the X agent about your question." */
+  routerChirp: Annotation<string | undefined>({
+    reducer: replace,
+    default: () => undefined
+  }),
   toolCalls: Annotation<ToolCallRecord[]>({
     reducer: replace,
     default: () => []

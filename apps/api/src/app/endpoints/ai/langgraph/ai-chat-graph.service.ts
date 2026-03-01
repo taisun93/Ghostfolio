@@ -145,6 +145,7 @@ export class AiChatGraphService {
   }): Promise<{
     content: string;
     route: RouteType;
+    routerChirp?: string;
     toolCalls: ToolCallRecord[];
   }> {
     const result = await this.invokeGraph({
@@ -158,6 +159,7 @@ export class AiChatGraphService {
     return {
       content: result.finalContent ?? '',
       route: result.route ?? 'general',
+      routerChirp: result.routerChirp,
       toolCalls: result.toolCalls ?? []
     };
   }
@@ -275,7 +277,8 @@ export class AiChatGraphService {
           route = 'advice';
         }
       }
-      return { route };
+      const routerChirp = `Let me ask the ${route} agent about your question.`;
+      return { route, routerChirp };
     };
 
     const dataAgent = async (
@@ -390,16 +393,20 @@ export class AiChatGraphService {
       } catch {
         decision = 'approve';
       }
-      let finalContent: string;
+      let mainContent: string;
       if (decision === 'block') {
-        finalContent =
+        mainContent =
           complianceMessage ||
           "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
       } else if (decision === 'warn') {
-        finalContent = draftReply + (complianceMessage ? `\n\n${complianceMessage}` : '');
+        mainContent = draftReply + (complianceMessage ? `\n\n${complianceMessage}` : '');
       } else {
-        finalContent = draftReply;
+        mainContent = draftReply;
       }
+      const finalContent =
+        state.routerChirp != null && state.routerChirp !== ''
+          ? `${state.routerChirp}\n\n${mainContent}`
+          : mainContent;
       return {
         complianceDecision: decision,
         complianceMessage,
