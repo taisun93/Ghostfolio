@@ -211,6 +211,7 @@ export class AiChatGraphService {
     userCurrency: string;
     userId: string;
   }): AsyncGenerator<{ chirp?: string; content?: string }> {
+    this.logger.log('runStream started (Nest backend; each agent runs 10 iterations)');
     const useDummyData =
       process.env['AI_CHAT_DUMMY_DATA'] !== 'false' &&
       process.env['AI_CHAT_DUMMY_DATA'] !== '0';
@@ -536,6 +537,7 @@ Answer using only the allocation data in the user message below. The user messag
       const generalNudge = 'Please provide a helpful, direct answer.';
       let draftReply = '';
       for (let i = 0; i < AGENT_LOOP_ITERATIONS; i++) {
+        this.logger.log(`general_agent iteration ${i + 1}/${AGENT_LOOP_ITERATIONS}`);
         const out = await generalModel.invoke(current);
         draftReply =
           typeof out.content === 'string' ? out.content : String(out.content ?? '');
@@ -775,6 +777,7 @@ Answer using only the allocation data in the user message below. The user messag
       'Please use the available tools to get the relevant data, then provide a clear answer based on that data.';
     let lastReply = '';
     for (let i = 0; i < AGENT_LOOP_ITERATIONS; i++) {
+      this.logger.log(`runToolLoop iteration ${i + 1}/${AGENT_LOOP_ITERATIONS}`);
       const response = await model.invoke(current);
       const responseToolCalls = (response as AIMessage).tool_calls ?? [];
       if (responseToolCalls.length === 0) {
@@ -813,6 +816,7 @@ Answer using only the allocation data in the user message below. The user messag
         ]);
       }
     }
+    this.logger.log(`runToolLoop completed ${AGENT_LOOP_ITERATIONS} iterations`);
     if (!lastReply.trim()) {
       lastReply = 'I hit the iteration limit. Please try a simpler question.';
     }
