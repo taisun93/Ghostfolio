@@ -1,6 +1,7 @@
 /**
  * Test suite 3 of 3: AI chat graph & reliability — routing fallbacks, compliance blocking,
- * tools in isolation, and service error handling. All tests are CI-safe (no API key required).
+ * tools in isolation, tool invocation through the graph (CI-safe, mocked LLM), and service
+ * error handling. All tests are CI-safe (no API key required).
  *
  * Other suites: ai-chat.service.spec.ts (Golden set), ai-chat-chirp.spec.ts (chirping).
  */
@@ -12,6 +13,9 @@ import { DataProviderService } from '@ghostfolio/api/services/data-provider/data
 import { MarketDataService } from '@ghostfolio/api/services/market-data/market-data.service';
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
 
+import type { BaseMessage } from '@langchain/core/messages';
+import { HumanMessage } from '@langchain/core/messages';
+
 import { createAdvisorAgentTools } from './langgraph/tools/advisor-agent.tools';
 import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
@@ -20,6 +24,80 @@ import {
   shouldBlockByInput
 } from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
+
+/** CI-safe mock: when set, ChatOpenAI returns fake invoke/bindTools so the graph runs without an API key. */
+const MOCK_FLAG = '__AI_CHAT_GRAPH_USE_MOCK_LLM__';
+const MOCK_ROUTE = '__AI_CHAT_GRAPH_MOCK_ROUTE__';
+function setUseMockChatOpenAI(value: boolean, route: 'data' | 'advice' = 'data') {
+  (global as unknown as Record<string, boolean | string>)[MOCK_FLAG] = value;
+  (global as unknown as Record<string, boolean | string>)[MOCK_ROUTE] = route;
+}
+
+jest.mock('@langchain/openai', () => {
+  return {
+    ChatOpenAI: jest.fn().mockImplementation(() => {
+      const invokeImpl = async (messages: BaseMessage[]) => {
+        const useMock = (global as unknown as Record<string, boolean>)[MOCK_FLAG];
+        const route = ((global as unknown as Record<string, string>)[MOCK_ROUTE] ||
+          'data') as 'data' | 'advice';
+        if (!useMock) {
+          return { content: '{}' };
+        }
+        const first = messages[0];
+        const systemContent =
+          first && (first as { _getType?: () => string })._getType?.() === 'system'
+            ? String((first as { content: unknown }).content ?? '')
+            : '';
+        if (systemContent.includes('classify') && systemContent.includes('route')) {
+          const chirp =
+            route === 'data'
+              ? 'Let me ask the data agent.'
+              : 'Let me ask the advice agent.';
+          return {
+            content: `{"route": "${route}", "chirp": "${chirp}"}`
+          };
+        }
+        if (systemContent.includes('compliance checker')) {
+          return { content: '{"decision": "approve"}' };
+        }
+        if (systemContent.includes('data agent')) {
+          const hasToolMessage = messages.some(
+            (m) => (m as { _getType?: () => string })._getType?.() === 'tool'
+          );
+          if (!hasToolMessage) {
+            return {
+              content: '',
+              tool_calls: [{ id: 'tc-1', name: 'get_holdings', args: {} }]
+            };
+          }
+          return { content: 'Here are your holdings.' };
+        }
+        if (systemContent.includes('advisor agent')) {
+          const hasToolMessage = messages.some(
+            (m) => (m as { _getType?: () => string })._getType?.() === 'tool'
+          );
+          if (!hasToolMessage) {
+            return {
+              content: '',
+              tool_calls: [
+                { id: 'tc-1', name: 'get_allocation_summary', args: {} }
+              ]
+            };
+          }
+          return { content: 'Here is your allocation advice.' };
+        }
+        if (systemContent.includes('friendly Ghostfolio assistant')) {
+          return { content: 'Hi there!' };
+        }
+        return { content: '{}' };
+      };
+      return {
+        invoke: invokeImpl,
+        bindTools: (_tools: unknown) => ({ invoke: invokeImpl })
+      };
+    })
+  };
+});
 
 jest.mock('@ghostfolio/api/app/account-balance/account-balance.service', () => ({
   AccountBalanceService: jest.fn()
@@ -225,6 +303,76 @@ describe('AI chat graph & reliability', () => {
         })
       ).rejects.toThrow(/AI chat|failed|OpenAI/);
       runSpy.mockRestore();
+    });
+  });
+
+  describe('Tool invocation through graph (CI-safe)', () => {
+    beforeEach(() => {
+      setUseMockChatOpenAI(true, 'data');
+      portfolioService.getDetails.mockResolvedValue({
+        holdings: {},
+        hasErrors: false
+      } as never);
+    });
+    afterEach(() => {
+      setUseMockChatOpenAI(false);
+      delete (global as unknown as Record<string, unknown>)[MOCK_FLAG];
+      delete (global as unknown as Record<string, unknown>)[MOCK_ROUTE];
+    });
+
+    it('runWithTrace with mocked LLM (data route) returns toolCalls and tool result', async () => {
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage("What's my allocation?")],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      expect(trace.route).toBe('data');
+      expect(trace.toolCalls.length).toBeGreaterThanOrEqual(1);
+      const getHoldingsCall = trace.toolCalls.find((tc) => tc.name === 'get_holdings');
+      expect(getHoldingsCall).toBeDefined();
+      expect(getHoldingsCall!.result).not.toBe('Tool not found.');
+      expect(trace.content).toBeDefined();
+      expect(trace.content.length).toBeGreaterThan(0);
+    });
+
+    it('runWithTrace with mocked LLM (advice route) returns toolCalls', async () => {
+      setUseMockChatOpenAI(true, 'advice');
+      portfolioService.getDetails.mockResolvedValue({
+        holdings: {},
+        hasErrors: false
+      } as never);
+
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('Should I rebalance?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+
+      expect(trace.route).toBe('advice');
+      expect(trace.toolCalls.length).toBeGreaterThanOrEqual(1);
+      const allocCall = trace.toolCalls.find(
+        (tc) => tc.name === 'get_allocation_summary'
+      );
+      expect(allocCall).toBeDefined();
+      expect(allocCall!.result).not.toBe('Tool not found.');
+    });
+
+    it('chat() with mocked LLM triggers backend (getDetails)', async () => {
+      propertyService.getByKey.mockResolvedValue('mock-key');
+
+      await aiChatService.chat({
+        ...BASE_PARAMS,
+        messages: [{ role: 'user', content: "What's my allocation?" }]
+      });
+
+      expect(portfolioService.getDetails).toHaveBeenCalled();
     });
   });
 });

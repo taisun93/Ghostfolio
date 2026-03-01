@@ -1,0 +1,10 @@
+---
+description: Never start Node.js / dev servers without explicit user confirmation (avoids high CPU usage)
+alwaysApply: true
+---
+
+# Do Not Start Node.js Without Confirmation
+
+- **Never** run `npm start`, `npm run dev`, `nx serve`, `node`, or any command that starts a Node.js process (dev server, build watcher, etc.) unless the user has explicitly asked you to do so or has confirmed when you proposed it.
+- Node.js processes (especially dev servers and watchers) can consume significant CPU; only start them when the user confirms.
+- If a task would require running a Node dev server or long-running Node process, **ask for confirmation first** (e.g., "Should I start the dev server?" or "This will start Node—proceed?") and do not start it until the user says yes.
