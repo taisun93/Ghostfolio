@@ -79,6 +79,10 @@ const COMPLIANCE_BLOCK_PATTERNS = [
 const COMPLIANCE_BLOCK_MESSAGE =
   "I can't help with that. For legitimate banking or fraud concerns, contact your bank or regulator.";
 
+/** Refusal phrase we never want when we already have portfolio context. */
+const REFUSAL_WHEN_HAVING_DATA =
+  /unable to access personal financial|I'm unable to access|cannot access (your )?(personal )?financial|can't (access|tell|see) (your )?financial/i;
+
 /** Exported for tests. Returns true when user input matches high-risk scam/fraud patterns (always block, no LLM call). */
 export function shouldBlockByInput(userContent: string): boolean {
   const text = (userContent || '').trim();
@@ -400,16 +404,30 @@ export class AiChatGraphService {
         ]);
       const systemWithContext = `${DATA_AGENT_SYSTEM}
 
---- Current portfolio context (use this to answer; do not say you cannot access it) ---
+The user's portfolio data is in the message below. You MUST answer from it. Never say you cannot access their information—you already have it.
+
+--- Current portfolio context ---
 ${contextBlock}
 ---`;
+      const contextMessage = new HumanMessage(
+        `[Portfolio data - use this to answer the user]\n${contextBlock}`
+      );
+      const messagesWithContext = [contextMessage, ...state.messages];
       const modelWithTools = dataModel.bindTools(tools);
-      const { reply: draftReply, toolCalls: loopCalls } = await this.runToolLoop(
+      let draftReply: string;
+      const { reply, toolCalls: loopCalls } = await this.runToolLoop(
         modelWithTools,
-        state.messages,
+        messagesWithContext,
         systemWithContext,
         tools
       );
+      draftReply = reply;
+      if (
+        REFUSAL_WHEN_HAVING_DATA.test(draftReply) &&
+        this.hasUsableTotalValue(preloadedCalls)
+      ) {
+        draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
+      }
       return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
     };
 
@@ -550,6 +568,73 @@ ${contextBlock}
     graph.addEdge('compliance', '__end__');
 
     return graph.compile();
+  }
+
+  private hasUsableTotalValue(calls: ToolCallRecord[]): boolean {
+    const total = calls.find((c) => c.name === 'get_total_value');
+    if (!total?.result || total.result.startsWith('Error')) return false;
+    try {
+      const parsed = JSON.parse(total.result) as {
+        totalValueInBaseCurrency?: number;
+        currency?: string;
+      };
+      return (
+        typeof parsed.totalValueInBaseCurrency === 'number' ||
+        /\d+/.test(total.result)
+      );
+    } catch {
+      return /\d+/.test(total.result);
+    }
+  }
+
+  private formatReplyFromPreloadedData(calls: ToolCallRecord[]): string {
+    const parts: string[] = [];
+    const total = calls.find((c) => c.name === 'get_total_value');
+    if (total?.result && !total.result.startsWith('Error')) {
+      try {
+        const parsed = JSON.parse(total.result) as {
+          totalValueInBaseCurrency?: number;
+          currency?: string;
+        };
+        const v = parsed.totalValueInBaseCurrency;
+        const c = parsed.currency ?? 'USD';
+        if (typeof v === 'number') {
+          parts.push(
+            `Your total portfolio value is ${v.toLocaleString()} ${c}.`
+          );
+        }
+      } catch {
+        parts.push(`Total value: ${total.result}`);
+      }
+    }
+    const perf = calls.find((c) => c.name === 'get_portfolio_performance');
+    if (perf?.result && !perf.result.startsWith('Error')) {
+      try {
+        const parsed = JSON.parse(perf.result) as {
+          netPerformancePercentage?: number;
+          netPerformance?: number;
+          currentNetWorth?: number;
+        };
+        if (typeof parsed.netPerformancePercentage === 'number') {
+          parts.push(
+            `Total return (performance): ${parsed.netPerformancePercentage.toFixed(1)}%.`
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (parts.length === 0) {
+      const holdings = calls.find((c) => c.name === 'get_holdings');
+      if (holdings?.result && !holdings.result.startsWith('Error')) {
+        parts.push(holdings.result);
+      } else {
+        parts.push(
+          "Your portfolio data was loaded but couldn't be summarized here. Check the portfolio view for details."
+        );
+      }
+    }
+    return parts.join(' ');
   }
 
   /**
