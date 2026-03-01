@@ -21,7 +21,10 @@ import { createDataAgentTools } from './langgraph/tools/data-agent.tools';
 import {
   AiChatGraphService,
   getDataRouteFallback,
-  shouldBlockByInput
+  shouldBlockByInput,
+  EXPORTED_CURRENT_STATUS_RULE,
+  EXPORTED_DATA_AGENT_SYSTEM,
+  EXPORTED_ADVICE_AGENT_SYSTEM
 } from './langgraph/ai-chat-graph.service';
 import { AiChatService } from './ai-chat.service';
 
@@ -213,6 +216,28 @@ describe('AI chat graph & reliability', () => {
     });
   });
 
+  describe('Tool use enforcement (prompts)', () => {
+    it('CURRENT_STATUS_RULE requires checking status via tools and forbids generic refusal', () => {
+      expect(EXPORTED_CURRENT_STATUS_RULE).toMatch(/current status/i);
+      expect(EXPORTED_CURRENT_STATUS_RULE).toMatch(/essential/i);
+      expect(EXPORTED_CURRENT_STATUS_RULE).toMatch(/via the tools/i);
+      expect(EXPORTED_CURRENT_STATUS_RULE).toMatch(/Never refuse.*cannot access their information/i);
+      expect(EXPORTED_CURRENT_STATUS_RULE).toMatch(/unable to access personal financial information/i);
+    });
+
+    it('data agent system prompt includes current-status rule and get_total_value for "how much money"', () => {
+      expect(EXPORTED_DATA_AGENT_SYSTEM).toContain(EXPORTED_CURRENT_STATUS_RULE);
+      expect(EXPORTED_DATA_AGENT_SYSTEM).toMatch(/get_total_value|get_holdings/i);
+      expect(EXPORTED_DATA_AGENT_SYSTEM).toMatch(/how much money|total value|how much am I worth/i);
+    });
+
+    it('advice agent system prompt includes current-status rule and using tools before advising', () => {
+      expect(EXPORTED_ADVICE_AGENT_SYSTEM).toContain(EXPORTED_CURRENT_STATUS_RULE);
+      expect(EXPORTED_ADVICE_AGENT_SYSTEM).toMatch(/allocation|holdings/i);
+      expect(EXPORTED_ADVICE_AGENT_SYSTEM).toMatch(/before advising/i);
+    });
+  });
+
   describe('Router fallback', () => {
     it('routes "how much money i got" and similar to data', () => {
       expect(getDataRouteFallback('how much money i got')).toBe('data');
@@ -337,9 +362,11 @@ describe('AI chat graph & reliability', () => {
       expect(getHoldingsCall!.result).not.toBe('Tool not found.');
       expect(trace.content).toBeDefined();
       expect(trace.content.length).toBeGreaterThan(0);
+      expect(trace.content).not.toMatch(/unable to access personal financial information/i);
+      expect(trace.content).not.toMatch(/I cannot access your (information|data)/i);
     });
 
-    it('runWithTrace with mocked LLM (advice route) returns toolCalls', async () => {
+    it('runWithTrace with mocked LLM (advice route) returns toolCalls and no generic refusal', async () => {
       setUseMockChatOpenAI(true, 'advice');
       portfolioService.getDetails.mockResolvedValue({
         holdings: {},
@@ -362,6 +389,7 @@ describe('AI chat graph & reliability', () => {
       );
       expect(allocCall).toBeDefined();
       expect(allocCall!.result).not.toBe('Tool not found.');
+      expect(trace.content).not.toMatch(/unable to access personal financial information/i);
     });
 
     it('chat() with mocked LLM triggers backend (getDetails)', async () => {

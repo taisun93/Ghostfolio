@@ -100,7 +100,7 @@ export function createDataAgentTools(
   return [
     tool(
       'get_total_value',
-      'Get total portfolio value (how much money the user has in their portfolio). Use for questions like "how much money do I have", "what is my total value", "how much am I worth". Returns totalValueInBaseCurrency and currency.',
+      'Get the user\'s total portfolio value (how much money they have). Call this for: "how much money do I have", "how much money I have", "what is my total value", "how much am I worth", "current value". Returns totalValueInBaseCurrency and currency.',
       async () => {
         if (useDummyData) return DUMMY.get_total_value(userCurrency);
         try {
