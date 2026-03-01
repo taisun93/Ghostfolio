@@ -392,14 +392,25 @@ export class AiChatGraphService {
         userCurrency: state.userCurrency,
         userId: state.userId
       });
+      const { contextBlock, toolCalls: preloadedCalls } =
+        await this.runStatusTools(tools, [
+          { name: 'get_total_value', args: {} },
+          { name: 'get_holdings', args: {} },
+          { name: 'get_portfolio_performance', args: { dateRange: 'max' } }
+        ]);
+      const systemWithContext = `${DATA_AGENT_SYSTEM}
+
+--- Current portfolio context (use this to answer; do not say you cannot access it) ---
+${contextBlock}
+---`;
       const modelWithTools = dataModel.bindTools(tools);
-      const { reply: draftReply, toolCalls } = await this.runToolLoop(
+      const { reply: draftReply, toolCalls: loopCalls } = await this.runToolLoop(
         modelWithTools,
         state.messages,
-        DATA_AGENT_SYSTEM,
+        systemWithContext,
         tools
       );
-      return { draftReply, toolCalls };
+      return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
     };
 
     const adviceAgent = async (
@@ -415,14 +426,23 @@ export class AiChatGraphService {
           userId: state.userId
         }
       );
+      const { contextBlock, toolCalls: preloadedCalls } =
+        await this.runStatusTools(tools, [
+          { name: 'get_allocation_summary', args: {} }
+        ]);
+      const systemWithContext = `${ADVICE_AGENT_SYSTEM}
+
+--- Current allocation context (use this to answer; do not say you cannot access it) ---
+${contextBlock}
+---`;
       const modelWithTools = adviceModel.bindTools(tools);
-      const { reply: draftReply, toolCalls } = await this.runToolLoop(
+      const { reply: draftReply, toolCalls: loopCalls } = await this.runToolLoop(
         modelWithTools,
         state.messages,
-        ADVICE_AGENT_SYSTEM,
+        systemWithContext,
         tools
       );
-      return { draftReply, toolCalls };
+      return { draftReply, toolCalls: [...preloadedCalls, ...loopCalls] };
     };
 
     const generalAgent = async (
@@ -530,6 +550,38 @@ export class AiChatGraphService {
     graph.addEdge('compliance', '__end__');
 
     return graph.compile();
+  }
+
+  /**
+   * Run status tools (e.g. get_total_value, get_holdings) and return a context block
+   * plus tool call records. Used to inject current portfolio data into agent context
+   * so every response is grounded in real data.
+   */
+  private async runStatusTools(
+    tools: StructuredToolInterface[],
+    statusCalls: { name: string; args: Record<string, unknown> }[]
+  ): Promise<{ contextBlock: string; toolCalls: ToolCallRecord[] }> {
+    const records: ToolCallRecord[] = [];
+    const lines: string[] = [];
+    for (const { name, args } of statusCalls) {
+      const tool = tools.find((t) => t.name === name);
+      let result: string;
+      if (tool) {
+        try {
+          result = await tool.invoke(args);
+        } catch (err) {
+          result = `Error: ${err instanceof Error ? err.message : 'Unknown'}`;
+        }
+      } else {
+        result = 'Tool not found.';
+      }
+      records.push({ name, args, result });
+      lines.push(`${name}: ${result}`);
+    }
+    return {
+      contextBlock: lines.join('\n\n'),
+      toolCalls: records
+    };
   }
 
   private async runToolLoop(
