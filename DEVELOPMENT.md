@@ -52,6 +52,21 @@ npm run database:push
 
 ## Deploying to Vercel
 
+### Stop Vercel builds (avoid charges)
+
+To stop builds from running on every push and avoid build charges:
+
+1. In **Vercel Dashboard**: open your project → **Settings** → **Git**.
+2. Under **Ignored Build Step**, set the command to either:
+   - **Never build:** `node scripts/vercel-skip-build-always.mjs`  
+     (Vercel will never run a build until you remove or change this.)
+   - **Build only when you want:** `node scripts/vercel-ignore-build.mjs`  
+     Then leave `DEPLOY_VERCEL` unset; set it to `1` in Environment Variables only when you want a one-off deploy.
+
+3. Save. Future pushes will not trigger a build unless you use the opt-in script and set `DEPLOY_VERCEL=1`.
+
+---
+
 Vercel serves only the **static Angular client**. The client calls the API on the same origin (`/api/v1/...`). So you must run the **NestJS API (with PostgreSQL and Redis) elsewhere** and proxy `/api` from Vercel to that backend.
 
 ### 1. Run the API and database elsewhere

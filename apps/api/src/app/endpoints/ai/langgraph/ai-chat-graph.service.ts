@@ -390,7 +390,8 @@ export class AiChatGraphService {
           typeof out.content === 'string' ? out.content : String(out.content);
         const routeMatch = text.match(/\{\s*"route"\s*:\s*"(data|advice|general)"/);
         if (routeMatch) {
-          route = routeMatch[1] as RouteType;
+          const raw = (routeMatch[1]?.trim()?.toLowerCase() as RouteType) || 'general';
+          route = ['data', 'advice', 'general'].includes(raw) ? raw : 'general';
         }
         const chirpMatch = text.match(/"chirp"\s*:\s*"((?:[^"\\]|\\.)*)"/);
         if (chirpMatch && chirpMatch[1].trim().length > 0) {
@@ -414,6 +415,9 @@ export class AiChatGraphService {
       if (!routerChirp?.trim()) {
         routerChirp = getDefaultChirpForRoute(route);
       }
+      if (!['data', 'advice', 'general'].includes(route)) {
+        route = 'general';
+      }
       const nextNode =
         route === 'data'
           ? 'data_agent'
@@ -428,127 +432,146 @@ export class AiChatGraphService {
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
       this.logger.log('data_agent entered');
-      const tools = createDataAgentTools(services, {
-        filters: state.filters,
-        impersonationId: state.impersonationId,
-        useDummyData: state.useDummyData,
-        userCurrency: state.userCurrency,
-        userId: state.userId
-      });
-      const { contextBlock, toolCalls: preloadedCalls } =
-        await this.runStatusTools(tools, [
-          { name: 'get_total_value', args: {} },
-          { name: 'get_holdings', args: {} },
-          { name: 'get_portfolio_performance', args: { dateRange: 'max' } },
-          { name: 'list_accounts', args: {} },
-          { name: 'get_account_balances', args: {} }
-        ]);
-      const lastUserContent = this.getLastUserContent(state.messages);
-      const systemOnly = `${DATA_AGENT_SYSTEM}
+      const fallbackReply =
+        "We couldn't process that right now. Please try again.";
+      try {
+        const tools = createDataAgentTools(services, {
+          filters: state.filters,
+          impersonationId: state.impersonationId,
+          useDummyData: state.useDummyData,
+          userCurrency: state.userCurrency,
+          userId: state.userId
+        });
+        const { contextBlock, toolCalls: preloadedCalls } =
+          await this.runStatusTools(tools, [
+            { name: 'get_total_value', args: {} },
+            { name: 'get_holdings', args: {} },
+            { name: 'get_portfolio_performance', args: { dateRange: 'max' } },
+            { name: 'list_accounts', args: {} },
+            { name: 'get_account_balances', args: {} }
+          ]);
+        const lastUserContent = this.getLastUserContent(state.messages);
+        const systemOnly = `${DATA_AGENT_SYSTEM}
 
 Answer using only the data in the user message below. The user message contains portfolio data followed by their question.`;
-      const singleMessageWithDataAndQuestion = new HumanMessage(
-        `Portfolio data:\n${contextBlock}\n\nUser question: ${lastUserContent || 'How can I help?'}`
-      );
-      const modelWithTools = dataModel.bindTools(tools);
-      let draftReply: string;
-      const { reply, toolCalls: loopCalls } = await this.runToolLoop(
-        modelWithTools,
-        [singleMessageWithDataAndQuestion],
-        systemOnly,
-        tools
-      );
-      draftReply = reply;
-      const isBlockedReply =
-        REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
-        IDK_OR_NON_ANSWER.test(draftReply);
-      if (isBlockedReply) {
-        draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
-        this.logger.log('data_agent return: refusal/IDK replaced with preloaded data');
+        const singleMessageWithDataAndQuestion = new HumanMessage(
+          `Portfolio data:\n${contextBlock}\n\nUser question: ${lastUserContent || 'How can I help?'}`
+        );
+        const modelWithTools = dataModel.bindTools(tools);
+        let draftReply: string;
+        const { reply, toolCalls: loopCalls } = await this.runToolLoop(
+          modelWithTools,
+          [singleMessageWithDataAndQuestion],
+          systemOnly,
+          tools
+        );
+        draftReply = reply;
+        const isBlockedReply =
+          REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
+          IDK_OR_NON_ANSWER.test(draftReply);
+        if (isBlockedReply) {
+          draftReply = this.formatReplyFromPreloadedData(preloadedCalls);
+          this.logger.log('data_agent return: refusal/IDK replaced with preloaded data');
+        }
+        const toolCallsResult = [...preloadedCalls, ...loopCalls];
+        this.logger.log(
+          `data_agent return → compliance (draftReply length=${draftReply.length}, toolCalls=${toolCallsResult.map((c) => c.name).join(', ')})`
+        );
+        return { draftReply, toolCalls: toolCallsResult };
+      } catch (err) {
+        this.logger.error('data_agent threw', err);
+        return { draftReply: fallbackReply, toolCalls: [] };
       }
-      const toolCallsResult = [...preloadedCalls, ...loopCalls];
-      this.logger.log(
-        `data_agent return → compliance (draftReply length=${draftReply.length}, toolCalls=${toolCallsResult.map((c) => c.name).join(', ')})`
-      );
-      return { draftReply, toolCalls: toolCallsResult };
     };
 
     const adviceAgent = async (
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
       this.logger.log('advice_agent entered');
-      const tools = createAdvisorAgentTools(
-        { portfolioService: this.portfolioService },
-        {
-          filters: state.filters,
-          impersonationId: state.impersonationId,
-          useDummyData: state.useDummyData,
-          userCurrency: state.userCurrency,
-          userId: state.userId
-        }
-      );
-      const { contextBlock, toolCalls: preloadedCalls } =
-        await this.runStatusTools(tools, [
-          { name: 'get_allocation_summary', args: {} }
-        ]);
-      const lastUserContent = this.getLastUserContent(state.messages);
-      const systemOnly = `${ADVICE_AGENT_SYSTEM}
+      const fallbackReply =
+        "We couldn't process that right now. Please try again.";
+      try {
+        const tools = createAdvisorAgentTools(
+          { portfolioService: this.portfolioService },
+          {
+            filters: state.filters,
+            impersonationId: state.impersonationId,
+            useDummyData: state.useDummyData,
+            userCurrency: state.userCurrency,
+            userId: state.userId
+          }
+        );
+        const { contextBlock, toolCalls: preloadedCalls } =
+          await this.runStatusTools(tools, [
+            { name: 'get_allocation_summary', args: {} }
+          ]);
+        const lastUserContent = this.getLastUserContent(state.messages);
+        const systemOnly = `${ADVICE_AGENT_SYSTEM}
 
 Answer using only the allocation data in the user message below. The user message contains the data followed by their question.`;
-      const singleMessageWithDataAndQuestion = new HumanMessage(
-        `Allocation data:\n${contextBlock}\n\nUser question: ${lastUserContent || 'How can I help?'}`
-      );
-      const modelWithTools = adviceModel.bindTools(tools);
-      let draftReply: string;
-      const { reply, toolCalls: loopCalls } = await this.runToolLoop(
-        modelWithTools,
-        [singleMessageWithDataAndQuestion],
-        systemOnly,
-        tools
-      );
-      draftReply = reply;
-      const allocCall = preloadedCalls.find(
-        (c) => c.name === 'get_allocation_summary'
-      );
-      const hasUsableAllocation =
-        allocCall?.result &&
-        !allocCall.result.startsWith('Error') &&
-        allocCall.result.length > 0;
-      const isRefusalOrIdkAdvice =
-        REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
-        IDK_OR_NON_ANSWER.test(draftReply);
-      if (isRefusalOrIdkAdvice && hasUsableAllocation) {
-        draftReply = `Based on your allocation: ${allocCall.result}`;
-        this.logger.log('advice_agent return: refusal/IDK replaced with allocation summary');
+        const singleMessageWithDataAndQuestion = new HumanMessage(
+          `Allocation data:\n${contextBlock}\n\nUser question: ${lastUserContent || 'How can I help?'}`
+        );
+        const modelWithTools = adviceModel.bindTools(tools);
+        let draftReply: string;
+        const { reply, toolCalls: loopCalls } = await this.runToolLoop(
+          modelWithTools,
+          [singleMessageWithDataAndQuestion],
+          systemOnly,
+          tools
+        );
+        draftReply = reply;
+        const allocCall = preloadedCalls.find(
+          (c) => c.name === 'get_allocation_summary'
+        );
+        const hasUsableAllocation =
+          allocCall?.result &&
+          !allocCall.result.startsWith('Error') &&
+          allocCall.result.length > 0;
+        const isRefusalOrIdkAdvice =
+          REFUSAL_WHEN_HAVING_DATA.test(draftReply) ||
+          IDK_OR_NON_ANSWER.test(draftReply);
+        if (isRefusalOrIdkAdvice && hasUsableAllocation) {
+          draftReply = `Based on your allocation: ${allocCall.result}`;
+          this.logger.log('advice_agent return: refusal/IDK replaced with allocation summary');
+        }
+        const adviceToolCalls = [...preloadedCalls, ...loopCalls];
+        this.logger.log(
+          `advice_agent return → compliance (draftReply length=${draftReply.length}, toolCalls=${adviceToolCalls.map((c) => c.name).join(', ')})`
+        );
+        return { draftReply, toolCalls: adviceToolCalls };
+      } catch (err) {
+        this.logger.error('advice_agent threw', err);
+        return { draftReply: fallbackReply, toolCalls: [] };
       }
-      const adviceToolCalls = [...preloadedCalls, ...loopCalls];
-      this.logger.log(
-        `advice_agent return → compliance (draftReply length=${draftReply.length}, toolCalls=${adviceToolCalls.map((c) => c.name).join(', ')})`
-      );
-      return { draftReply, toolCalls: adviceToolCalls };
     };
 
     const generalAgent = async (
       state: ChatGraphState
     ): Promise<Partial<ChatGraphState>> => {
       this.logger.log('general_agent entered');
-      const system = new SystemMessage(GENERAL_AGENT_SYSTEM);
-      let current: BaseMessage[] = [system, ...state.messages];
-      const generalNudge = 'Please provide a helpful, direct answer.';
       let draftReply = '';
-      for (let i = 0; i < AGENT_LOOP_ITERATIONS; i++) {
-        this.logger.log(`general_agent iteration ${i + 1}/${AGENT_LOOP_ITERATIONS}`);
-        const out = await generalModel.invoke(current);
-        draftReply =
-          typeof out.content === 'string' ? out.content : String(out.content ?? '');
-        current = current.concat([
-          out as AIMessage,
-          new HumanMessage(generalNudge)
-        ]);
-      }
-      if (!isDecentReply(draftReply)) {
+      try {
+        const system = new SystemMessage(GENERAL_AGENT_SYSTEM);
+        let current: BaseMessage[] = [system, ...state.messages];
+        const generalNudge = 'Please provide a helpful, direct answer.';
+        for (let i = 0; i < AGENT_LOOP_ITERATIONS; i++) {
+          this.logger.log(`general_agent iteration ${i + 1}/${AGENT_LOOP_ITERATIONS}`);
+          const out = await generalModel.invoke(current);
+          draftReply =
+            typeof out.content === 'string' ? out.content : String(out.content ?? '');
+          current = current.concat([
+            out as AIMessage,
+            new HumanMessage(generalNudge)
+          ]);
+        }
+        if (!isDecentReply(draftReply)) {
+          draftReply = FALLBACK_NEVER_REFUSAL;
+          this.logger.log('general_agent: final reply not decent, using fallback');
+        }
+      } catch (err) {
+        this.logger.error('general_agent threw', err);
         draftReply = FALLBACK_NEVER_REFUSAL;
-        this.logger.log('general_agent: final reply not decent, using fallback');
       }
       this.logger.log(
         `general_agent return → compliance (draftReply length=${draftReply.length})`
@@ -654,7 +677,14 @@ Answer using only the allocation data in the user message below. The user messag
       .addNode('compliance', compliance);
 
     graph.addEdge('__start__', 'router');
-    graph.addConditionalEdges('router', (state: ChatGraphState) => state.route ?? 'general', {
+    const routeToAgent = (state: ChatGraphState): RouteType => {
+      const r = state.route?.trim()?.toLowerCase();
+      const key: RouteType =
+        r === 'data' || r === 'advice' || r === 'general' ? r : 'general';
+      this.logger.log(`conditional edge route=${state.route} → key=${key}`);
+      return key;
+    };
+    graph.addConditionalEdges('router', routeToAgent, {
       data: 'data_agent',
       advice: 'advice_agent',
       general: 'general_agent'

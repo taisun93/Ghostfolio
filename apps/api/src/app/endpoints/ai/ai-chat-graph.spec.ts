@@ -33,9 +33,20 @@ import { AiChatService } from './ai-chat.service';
 /** CI-safe mock: when set, ChatOpenAI returns fake invoke/bindTools so the graph runs without an API key. */
 const MOCK_FLAG = '__AI_CHAT_GRAPH_USE_MOCK_LLM__';
 const MOCK_ROUTE = '__AI_CHAT_GRAPH_MOCK_ROUTE__';
+/** When set, router JSON uses this raw route string (e.g. "unknown", " Data ") to test normalization/fallback. */
+const MOCK_ROUTE_RAW = '__AI_CHAT_GRAPH_MOCK_ROUTE_RAW__';
+/** When set, first data-agent invoke throws (to test agent try/catch fallback). */
+const MOCK_THROW_DATA_AGENT_ONCE = '__AI_CHAT_GRAPH_THROW_DATA_AGENT_ONCE__';
 function setUseMockChatOpenAI(value: boolean, route: 'data' | 'advice' = 'data') {
   (global as unknown as Record<string, boolean | string>)[MOCK_FLAG] = value;
   (global as unknown as Record<string, boolean | string>)[MOCK_ROUTE] = route;
+}
+function setMockRouteRaw(value: string | undefined) {
+  if (value === undefined) delete (global as unknown as Record<string, unknown>)[MOCK_ROUTE_RAW];
+  else (global as unknown as Record<string, string>)[MOCK_ROUTE_RAW] = value;
+}
+function setMockThrowDataAgentOnce(value: boolean) {
+  (global as unknown as Record<string, boolean>)[MOCK_THROW_DATA_AGENT_ONCE] = value;
 }
 
 jest.mock('@langchain/openai', () => {
@@ -58,14 +69,21 @@ jest.mock('@langchain/openai', () => {
             route === 'data'
               ? 'Let me ask the data agent.'
               : 'Let me ask the advice agent.';
+          const routeRaw = (global as unknown as Record<string, string | undefined>)[MOCK_ROUTE_RAW];
+          const routeStr = typeof routeRaw === 'string' ? routeRaw : route;
           return {
-            content: `{"route": "${route}", "chirp": "${chirp}"}`
+            content: `{"route": "${routeStr}", "chirp": "${chirp}"}`
           };
         }
         if (systemContent.includes('compliance checker')) {
           return { content: '{"decision": "approve"}' };
         }
         if (systemContent.includes('data agent')) {
+          const throwOnce = (global as unknown as Record<string, boolean>)[MOCK_THROW_DATA_AGENT_ONCE];
+          if (throwOnce) {
+            (global as unknown as Record<string, boolean>)[MOCK_THROW_DATA_AGENT_ONCE] = false;
+            throw new Error('simulated data agent failure');
+          }
           const hasToolMessage = messages.some(
             (m) => (m as { _getType?: () => string })._getType?.() === 'tool'
           );
@@ -269,6 +287,54 @@ describe('AI chat graph & reliability', () => {
     });
   });
 
+  describe('Router normalization and conditional edge', () => {
+    beforeEach(() => {
+      setUseMockChatOpenAI(true, 'data');
+      portfolioService.getDetails.mockResolvedValue({
+        holdings: {},
+        hasErrors: false
+      } as never);
+    });
+    afterEach(() => {
+      setUseMockChatOpenAI(false);
+      setMockRouteRaw(undefined);
+      delete (global as unknown as Record<string, unknown>)[MOCK_FLAG];
+      delete (global as unknown as Record<string, unknown>)[MOCK_ROUTE];
+      delete (global as unknown as Record<string, unknown>)[MOCK_ROUTE_RAW];
+    });
+
+    it('when LLM returns invalid route string, graph still completes with route general and content', async () => {
+      setMockRouteRaw('unknown');
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('How much money do I have?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+      expect(trace.route).toBe('general');
+      expect(trace.content).toBeDefined();
+      expect(trace.content.length).toBeGreaterThan(0);
+      expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+    });
+
+    it('when LLM returns route with whitespace/caps, route is normalized and graph reaches agent', async () => {
+      setMockRouteRaw('  Data  ');
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('What is my balance?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+      expect(['data', 'general']).toContain(trace.route);
+      expect(trace.content).toBeDefined();
+      expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+    });
+  });
+
   describe('Data agent tools', () => {
     it('get_total_value with dummy data returns total value and currency', async () => {
       const tools = createDataAgentTools(
@@ -363,8 +429,27 @@ describe('AI chat graph & reliability', () => {
     });
     afterEach(() => {
       setUseMockChatOpenAI(false);
+      setMockRouteRaw(undefined);
+      setMockThrowDataAgentOnce(false);
       delete (global as unknown as Record<string, unknown>)[MOCK_FLAG];
       delete (global as unknown as Record<string, unknown>)[MOCK_ROUTE];
+      delete (global as unknown as Record<string, unknown>)[MOCK_ROUTE_RAW];
+      delete (global as unknown as Record<string, unknown>)[MOCK_THROW_DATA_AGENT_ONCE];
+    });
+
+    it('when data_agent throws, graph returns fallback draftReply and still runs compliance', async () => {
+      setMockThrowDataAgentOnce(true);
+      const trace = await aiChatGraphService.runWithTrace({
+        filters: BASE_PARAMS.filters,
+        impersonationId: BASE_PARAMS.impersonationId,
+        messages: [new HumanMessage('How much money do I have?')],
+        openAiKey: 'mock-key',
+        userCurrency: BASE_PARAMS.userCurrency,
+        userId: BASE_PARAMS.userId
+      });
+      expect(trace.route).toBe('data');
+      expect(trace.content).toContain("We couldn't process that right now. Please try again.");
+      expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
     });
 
     it('runWithTrace with mocked LLM (data route) returns toolCalls and tool result', async () => {
