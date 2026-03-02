@@ -526,6 +526,7 @@ export class DataProviderService implements OnModuleInit {
       for (const { symbol } of items) {
         response[symbol] = {
           currency: 'USD',
+          dataSource: DataSource.YAHOO,
           marketPrice: 175,
           marketState: 'open'
         };

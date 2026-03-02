@@ -469,7 +469,8 @@ export class PortfolioService {
   private static readonly AI_CHAT_CONSTANT_DETAILS: PortfolioDetails & {
     hasErrors: boolean;
   } = {
-    accounts: [],
+    accounts: {},
+    createdAt: new Date(),
     hasErrors: false,
     holdings: {
       AAPL: {
@@ -531,9 +532,10 @@ export class PortfolioService {
         sectors: []
       } as PortfolioPosition
     },
-    markets: {},
-    marketsAdvanced: {},
-    summary: { currentValueInBaseCurrency: 1800 }
+    markets: {} as PortfolioDetails['markets'],
+    marketsAdvanced: {} as PortfolioDetails['marketsAdvanced'],
+    platforms: {},
+    summary: { currentValueInBaseCurrency: 1800 } as PortfolioSummary
   };
 
   public async getDetails({

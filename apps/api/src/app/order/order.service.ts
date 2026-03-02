@@ -468,8 +468,9 @@ export class OrderService {
         symbol: 'AAPL',
         quantity: 10,
         unitPrice: 150
-      } as Activity
-    ]
+      } as unknown as Activity
+    ],
+    count: 1
   };
 
   public async getOrders({
