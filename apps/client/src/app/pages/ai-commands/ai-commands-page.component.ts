@@ -178,9 +178,20 @@ export class GfAiCommandsPageComponent implements OnInit, OnDestroy {
       }
 
       if (!res.ok) {
+        let errPayload: { status: number; message?: string; error?: { message?: string } } = {
+          status: res.status,
+          message: res.statusText
+        };
+        try {
+          const body = await res.json();
+          if (body?.message) errPayload.message = body.message;
+          if (typeof body?.message === 'string') errPayload.error = { message: body.message };
+        } catch {
+          // ignore non-JSON body
+        }
         this.ngZone.run(() => {
           this.isThinking = false;
-          this.errorMessage = this.getErrorMessage({ status: res.status, message: res.statusText });
+          this.errorMessage = this.getErrorMessage(errPayload);
           this.changeDetectorRef.detectChanges();
         });
         return;
