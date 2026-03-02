@@ -1,5 +1,6 @@
 import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import {
+  PROPERTY_API_KEY_OPENAI,
   PROPERTY_CURRENCIES,
   PROPERTY_IS_USER_SIGNUP_ENABLED
 } from '@ghostfolio/common/config';
@@ -41,6 +42,14 @@ export class PropertyService {
   }
 
   public async getByKey<TValue extends PropertyValue>(aKey: string) {
+    if (
+      process.env.AI_CHAT_FAKE_SERVICES !== 'false' &&
+      aKey === PROPERTY_API_KEY_OPENAI
+    ) {
+      return (process.env.OPENAI_API_KEY?.trim() ||
+        process.env.API_KEY_OPENAI?.trim() ||
+        null) as TValue;
+    }
     const properties = await this.get();
     return properties[aKey] as TValue;
   }

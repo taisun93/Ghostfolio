@@ -95,6 +95,7 @@ Example: if your API is at `https://ghostfolio-api.railway.app`, use `"destinati
 
 ### 3. Deploy the client on Vercel
 
+- In the Vercel project **Settings → General**, set **Root Directory** to the folder that contains `package.json`. For this repo that is usually the repo root, so leave Root Directory **empty**. If you see errors like `ENOENT ... /vercel/path1/package.json`, Root Directory is wrong (e.g. a placeholder like `path1`); clear it or set it to the correct path.
 - Connect the repo to Vercel and use the existing **Build Command** and **Output Directory** (or the values in `vercel.json` above).
 - The root URL serves a redirect page (see `apps/client/src/assets/index.html`) that sends users to a locale path (e.g. `/en/`). The app then loads and calls `/api/v1/info` and other endpoints, which Vercel forwards to your API via the rewrite.
 

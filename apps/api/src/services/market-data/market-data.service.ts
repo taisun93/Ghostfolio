@@ -69,6 +69,9 @@ export class MarketDataService {
     skip?: number;
     take?: number;
   }): Promise<MarketData[]> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      return [];
+    }
     return this.prismaService.marketData.findMany({
       skip,
       take,

@@ -459,6 +459,19 @@ export class OrderService {
     });
   }
 
+  /** Default: return a constant. Set AI_CHAT_FAKE_SERVICES=false for real data. */
+  private static readonly AI_CHAT_CONSTANT_ORDERS: ActivitiesResponse = {
+    activities: [
+      {
+        date: new Date().toISOString(),
+        type: 'BUY',
+        symbol: 'AAPL',
+        quantity: 10,
+        unitPrice: 150
+      } as Activity
+    ]
+  };
+
   public async getOrders({
     endDate,
     filters,
@@ -486,6 +499,9 @@ export class OrderService {
     userId: string;
     withExcludedAccountsAndActivities?: boolean;
   }): Promise<ActivitiesResponse> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      return OrderService.AI_CHAT_CONSTANT_ORDERS;
+    }
     let orderBy: Prisma.Enumerable<Prisma.OrderOrderByWithRelationInput> = [
       { date: 'asc' }
     ];

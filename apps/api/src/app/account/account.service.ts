@@ -139,7 +139,28 @@ export class AccountService {
     return account;
   }
 
+  /** Default: return a constant. Set AI_CHAT_FAKE_SERVICES=false for real data. */
+  private static readonly AI_CHAT_CONSTANT_ACCOUNTS: Account[] = [
+    {
+      id: 'acc-1',
+      name: 'Brokerage',
+      userId: '',
+      platformId: null,
+      balance: 5000,
+      currency: 'USD',
+      isExcluded: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    } as Account
+  ];
+
   public async getAccounts(aUserId: string): Promise<Account[]> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      return AccountService.AI_CHAT_CONSTANT_ACCOUNTS.map((a) => ({
+        ...a,
+        userId: aUserId
+      }));
+    }
     const accounts = await this.accounts({
       include: {
         activities: true,

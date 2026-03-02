@@ -521,6 +521,17 @@ export class DataProviderService implements OnModuleInit {
   }): Promise<{
     [symbol: string]: DataProviderResponse;
   }> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      const response: { [symbol: string]: DataProviderResponse } = {};
+      for (const { symbol } of items) {
+        response[symbol] = {
+          currency: 'USD',
+          marketPrice: 175,
+          marketState: 'open'
+        };
+      }
+      return response;
+    }
     const response: {
       [symbol: string]: DataProviderResponse;
     } = {};

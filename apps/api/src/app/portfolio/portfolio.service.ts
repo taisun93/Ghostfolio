@@ -465,6 +465,77 @@ export class PortfolioService {
     };
   }
 
+  /** Default: return a constant. Set AI_CHAT_FAKE_SERVICES=false for real data. */
+  private static readonly AI_CHAT_CONSTANT_DETAILS: PortfolioDetails & {
+    hasErrors: boolean;
+  } = {
+    accounts: [],
+    hasErrors: false,
+    holdings: {
+      AAPL: {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        currency: 'USD',
+        allocationInPercentage: 0.6,
+        assetClass: AssetClass.EQUITY,
+        assetSubClass: null,
+        activitiesCount: 1,
+        dataSource: DataSource.YAHOO,
+        dateOfFirstActivity: new Date(),
+        dividend: 0,
+        grossPerformance: 0,
+        grossPerformancePercent: 0,
+        grossPerformancePercentWithCurrencyEffect: 0,
+        grossPerformanceWithCurrencyEffect: 0,
+        holdings: [],
+        investment: 1000,
+        markets: {},
+        marketsAdvanced: {},
+        marketPrice: 150,
+        netPerformance: 0,
+        netPerformancePercent: 0,
+        netPerformancePercentWithCurrencyEffect: 0,
+        netPerformanceWithCurrencyEffect: 0,
+        quantity: 10,
+        valueInBaseCurrency: 1500,
+        countries: [],
+        sectors: []
+      } as PortfolioPosition,
+      MSFT: {
+        symbol: 'MSFT',
+        name: 'Microsoft Corporation',
+        currency: 'USD',
+        allocationInPercentage: 0.4,
+        assetClass: AssetClass.EQUITY,
+        assetSubClass: null,
+        activitiesCount: 1,
+        dataSource: DataSource.YAHOO,
+        dateOfFirstActivity: new Date(),
+        dividend: 0,
+        grossPerformance: 0,
+        grossPerformancePercent: 0,
+        grossPerformancePercentWithCurrencyEffect: 0,
+        grossPerformanceWithCurrencyEffect: 0,
+        holdings: [],
+        investment: 1000,
+        markets: {},
+        marketsAdvanced: {},
+        marketPrice: 150,
+        netPerformance: 0,
+        netPerformancePercent: 0,
+        netPerformancePercentWithCurrencyEffect: 0,
+        netPerformanceWithCurrencyEffect: 0,
+        quantity: 10,
+        valueInBaseCurrency: 1200,
+        countries: [],
+        sectors: []
+      } as PortfolioPosition
+    },
+    markets: {},
+    marketsAdvanced: {},
+    summary: { currentValueInBaseCurrency: 1800 }
+  };
+
   public async getDetails({
     dateRange = 'max',
     filters,
@@ -482,6 +553,9 @@ export class PortfolioService {
     withMarkets?: boolean;
     withSummary?: boolean;
   }): Promise<PortfolioDetails & { hasErrors: boolean }> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      return PortfolioService.AI_CHAT_CONSTANT_DETAILS;
+    }
     userId = await this.getUserId(impersonationId, userId);
     const user = await this.userService.user({ id: userId });
     const userCurrency = this.getUserCurrency(user);
@@ -967,6 +1041,24 @@ export class PortfolioService {
     };
   }
 
+  /** Default: return a constant. Set AI_CHAT_FAKE_SERVICES=false for real data. */
+  private static readonly AI_CHAT_CONSTANT_PERFORMANCE: PortfolioPerformanceResponse = {
+    chart: [],
+    errors: [],
+    firstOrderDate: undefined,
+    hasErrors: false,
+    performance: {
+      currentNetWorth: 2100,
+      currentValueInBaseCurrency: 2100,
+      netPerformance: 100,
+      netPerformancePercentage: 5,
+      netPerformancePercentageWithCurrencyEffect: 5,
+      netPerformanceWithCurrencyEffect: 100,
+      totalInvestment: 2000,
+      totalInvestmentValueWithCurrencyEffect: 2000
+    }
+  };
+
   public async getPerformance({
     dateRange = 'max',
     filters,
@@ -979,6 +1071,9 @@ export class PortfolioService {
     userId: string;
     withExcludedAccounts?: boolean;
   }): Promise<PortfolioPerformanceResponse> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      return PortfolioService.AI_CHAT_CONSTANT_PERFORMANCE;
+    }
     userId = await this.getUserId(impersonationId, userId);
     const user = await this.userService.user({ id: userId });
     const userCurrency = this.getUserCurrency(user);

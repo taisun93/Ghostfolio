@@ -130,6 +130,19 @@ export class AccountBalanceService {
     return Object.values(accumulatedBalancesByDate);
   }
 
+  /** Default: return a constant. Set AI_CHAT_FAKE_SERVICES=false for real data. */
+  private static readonly AI_CHAT_CONSTANT_BALANCES: AccountBalancesResponse = {
+    balances: [
+      {
+        accountId: 'acc-1',
+        date: new Date(),
+        id: 'bal-1',
+        value: 5000,
+        valueInBaseCurrency: 5000
+      }
+    ]
+  };
+
   @LogPerformance
   public async getAccountBalances({
     filters,
@@ -142,6 +155,9 @@ export class AccountBalanceService {
     userId: string;
     withExcludedAccounts?: boolean;
   }): Promise<AccountBalancesResponse> {
+    if (process.env.AI_CHAT_FAKE_SERVICES !== 'false') {
+      return AccountBalanceService.AI_CHAT_CONSTANT_BALANCES;
+    }
     const where: Prisma.AccountBalanceWhereInput = { userId };
 
     const accountFilter = filters?.find(({ type }) => {
