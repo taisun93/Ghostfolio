@@ -107,6 +107,18 @@ const PORTFOLIO_FIXTURE = {
   summary: { currentValueInBaseCurrency: 1800 }
 };
 
+/** Log route, chirp (parrot), and full body for each test so output shows more than pass/fail. */
+function logTrace(
+  testName: string,
+  trace: { route: string; routerChirp?: string; content: string }
+) {
+  console.log('\n[Only Real]', testName);
+  console.log('  route:', trace.route);
+  console.log('  chirp (parrot):', trace.routerChirp ?? '(none)');
+  console.log('  full body:', trace.content);
+  console.log('');
+}
+
 describe('Only Real', () => {
   let accountBalanceService: jest.Mocked<Pick<AccountBalanceService, 'getAccountBalances'>>;
   let accountService: jest.Mocked<Pick<AccountService, 'getAccounts'>>;
@@ -176,6 +188,7 @@ describe('Only Real', () => {
           userCurrency: BASE_PARAMS.userCurrency,
           userId: BASE_PARAMS.userId
         });
+        logTrace('How much money do I have?', trace);
 
         expect(trace.route).toBe('data');
         expect(trace.routerChirp).toBeDefined();
@@ -212,6 +225,7 @@ describe('Only Real', () => {
           userCurrency: BASE_PARAMS.userCurrency,
           userId: BASE_PARAMS.userId
         });
+        logTrace("What's my portfolio allocation?", trace);
 
         expect(trace.route).toBe('data');
         expect(trace.routerChirp).toMatch(/data agent/i);
@@ -226,6 +240,198 @@ describe('Only Real', () => {
           dataToolNames.includes(tc.name)
         );
         expect(usedDataTool).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"List my accounts" calls list_accounts',
+      async () => {
+        accountService.getAccounts.mockResolvedValue([
+          { id: 'acc-1', name: 'Brokerage', platform: null }
+        ] as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('List my accounts')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('List my accounts', trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'list_accounts')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"What\'s my total return?" calls get_portfolio_performance',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        portfolioService.getPerformance.mockResolvedValue({
+          performance: {
+            netPerformance: 100,
+            netPerformancePercentage: 5,
+            totalInvestment: 2000,
+            currentNetWorth: 2100,
+            currentValueInBaseCurrency: 2100,
+            netPerformancePercentageWithCurrencyEffect: 5,
+            netPerformanceWithCurrencyEffect: 100,
+            totalInvestmentValueWithCurrencyEffect: 2000
+          }
+        } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's my total return?")],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace("What's my total return?", trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_portfolio_performance')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"What are my holdings?" calls get_holdings',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('What are my holdings?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('What are my holdings?', trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_holdings')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"How much am I worth?" calls get_total_value',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('How much am I worth?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('How much am I worth?', trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_total_value')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"What\'s the current price of AAPL?" calls get_quote',
+      async () => {
+        dataProviderService.getQuotes.mockResolvedValue({
+          AAPL: { currency: 'USD', marketPrice: 175 }
+        } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's the current price of AAPL?")],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace("What's the current price of AAPL?", trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_quote')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"Show my recent orders" calls get_orders',
+      async () => {
+        orderService.getOrders.mockResolvedValue({
+          activities: [{ symbol: 'AAPL', name: 'Buy', quantity: 10 }]
+        } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Show my recent orders')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('Show my recent orders', trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_orders')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"What\'s my account balance?" calls get_account_balances',
+      async () => {
+        accountBalanceService.getAccountBalances.mockResolvedValue({
+          balances: [{ accountId: 'acc-1', balance: 5000 }]
+        } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's my account balance?")],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace("What's my account balance?", trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_account_balances')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"How is my portfolio performing?" calls get_portfolio_performance',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        portfolioService.getPerformance.mockResolvedValue({
+          performance: {
+            netPerformance: 50,
+            netPerformancePercentage: 2.5,
+            totalInvestment: 2000,
+            currentNetWorth: 2050,
+            currentValueInBaseCurrency: 2050,
+            netPerformancePercentageWithCurrencyEffect: 2.5,
+            netPerformanceWithCurrencyEffect: 50,
+            totalInvestmentValueWithCurrencyEffect: 2000
+          }
+        } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('How is my portfolio performing?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('How is my portfolio performing?', trace);
+        expect(trace.route).toBe('data');
+        expect(trace.toolCalls.some((tc) => tc.name === 'get_portfolio_performance')).toBe(true);
         expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
       },
       AI_CHAT_TEST_TIMEOUT_MS
@@ -248,6 +454,7 @@ describe('Only Real', () => {
           userCurrency: BASE_PARAMS.userCurrency,
           userId: BASE_PARAMS.userId
         });
+        logTrace('Should I rebalance my portfolio?', trace);
 
         expect(trace.route).toBe('advice');
         expect(trace.routerChirp).toBeDefined();
@@ -261,6 +468,108 @@ describe('Only Real', () => {
           adviceToolNames.includes(tc.name)
         );
         expect(usedAdviceTool).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"Is my portfolio too concentrated?" calls allocation tools',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Is my portfolio too concentrated?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('Is my portfolio too concentrated?', trace);
+        expect(trace.route).toBe('advice');
+        const adviceTools = ['get_allocation_summary', 'analyze_allocation', 'suggest_rebalance'];
+        expect(trace.toolCalls.some((tc) => adviceTools.includes(tc.name))).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"Give me rebalance suggestions" calls suggest_rebalance',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Give me rebalance suggestions')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('Give me rebalance suggestions', trace);
+        expect(trace.route).toBe('advice');
+        expect(trace.toolCalls.some((tc) => tc.name === 'suggest_rebalance')).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"Do I have enough bonds?" calls allocation tools',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Do I have enough bonds?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('Do I have enough bonds?', trace);
+        expect(trace.route).toBe('advice');
+        const adviceTools = ['get_allocation_summary', 'analyze_allocation', 'suggest_rebalance'];
+        expect(trace.toolCalls.some((tc) => adviceTools.includes(tc.name))).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"Am I diversified?" calls allocation tools',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Am I diversified?')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('Am I diversified?', trace);
+        expect(trace.route).toBe('advice');
+        const adviceTools = ['get_allocation_summary', 'analyze_allocation', 'suggest_rebalance'];
+        expect(trace.toolCalls.some((tc) => adviceTools.includes(tc.name))).toBe(true);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"What\'s my risk level?" calls advice allocation tools',
+      async () => {
+        portfolioService.getDetails.mockResolvedValue({ ...PORTFOLIO_FIXTURE } as never);
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's my risk level?")],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace("What's my risk level?", trace);
+        expect(['data', 'advice']).toContain(trace.route);
         expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
       },
       AI_CHAT_TEST_TIMEOUT_MS
@@ -279,9 +588,48 @@ describe('Only Real', () => {
           userCurrency: BASE_PARAMS.userCurrency,
           userId: BASE_PARAMS.userId
         });
+        logTrace('Hi', trace);
 
         expect(trace.route).toBe('general');
         expect(trace.routerChirp).toMatch(/general assistant/i);
+        expect(trace.toolCalls).toHaveLength(0);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"Hello there" uses general route, no tools',
+      async () => {
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage('Hello there')],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace('Hello there', trace);
+        expect(trace.route).toBe('general');
+        expect(trace.toolCalls).toHaveLength(0);
+        expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
+      },
+      AI_CHAT_TEST_TIMEOUT_MS
+    );
+
+    itWithKey(
+      '"What\'s the weather?" uses general route, no tools',
+      async () => {
+        const trace = await aiChatGraphService.runWithTrace({
+          filters: BASE_PARAMS.filters,
+          impersonationId: BASE_PARAMS.impersonationId,
+          messages: [new HumanMessage("What's the weather?")],
+          openAiKey: getOpenAiKey()!,
+          userCurrency: BASE_PARAMS.userCurrency,
+          userId: BASE_PARAMS.userId
+        });
+        logTrace("What's the weather?", trace);
+        expect(trace.route).toBe('general');
         expect(trace.toolCalls).toHaveLength(0);
         expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
       },
@@ -305,6 +653,7 @@ describe('Only Real', () => {
           userCurrency: BASE_PARAMS.userCurrency,
           userId: BASE_PARAMS.userId
         });
+        logTrace('fund North Korea (compliance)', trace);
 
         expect(trace.content).toContain(COMPLIANCE_QA_SUFFIX);
         expect(trace.content).toMatch(
