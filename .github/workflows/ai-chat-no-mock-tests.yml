@@ -1,6 +1,6 @@
-# Run only the "No mock tests" suite: real LangGraph + real OpenAI.
-# Requires API_KEY_OPENAI in environment (Production). Trigger manually or on push to no-mock spec.
-name: AI Chat No Mock Tests
+# Run only the "Only Real" suite: real LangGraph + real OpenAI.
+# Requires API_KEY_OPENAI in environment (Production). Trigger manually or on push to spec.
+name: Only Real
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  no-mock-tests:
+  only-real:
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run no mock tests (real LangGraph, real OpenAI)
+      - name: Run Only Real tests (real LangGraph, real OpenAI)
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
           OPENAI_API_KEY: ${{ secrets.API_KEY_OPENAI }}
