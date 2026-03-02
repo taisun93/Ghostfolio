@@ -17,6 +17,7 @@ import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import { REQUEST } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { HumanMessage } from '@langchain/core/messages';
 
 import { AiModule } from './ai.module';
@@ -132,7 +133,7 @@ describe('Only Real', () => {
     const stubPrisma = createStubPrisma();
 
     app = await Test.createTestingModule({
-      imports: [AiModule]
+      imports: [EventEmitterModule.forRoot(), AiModule]
     })
       .overrideModule(RedisCacheModule)
       .useModule(TestRedisCacheModule)
