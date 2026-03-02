@@ -1,16 +1,17 @@
 # Run AI chat golden-set tests and report. Use when local runs hit OOM.
-# Trigger manually from Actions tab, or on push to AI-related paths.
+# Disabled for push: runs only when triggered manually from the Actions tab.
 name: AI Chat Test Report
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/api/src/app/endpoints/ai/**'
-      - 'apps/api/jest.config.ts'
-      - 'apps/api/scripts/run-ai-chat-tests-and-report.mjs'
-      - '.github/workflows/ai-chat-tests.yml'
+  # push trigger disabled — use "AI Chat No Mock Tests" workflow for automatic runs
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'apps/api/src/app/endpoints/ai/**'
+  #     - 'apps/api/jest.config.ts'
+  #     - 'apps/api/scripts/run-ai-chat-tests-and-report.mjs'
+  #     - '.github/workflows/ai-chat-tests.yml'
 
 permissions:
   contents: read

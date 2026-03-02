@@ -1,0 +1,38 @@
+# Run only the "No mock tests" suite: real LangGraph + real OpenAI.
+# Requires API_KEY_OPENAI in environment (Production). Trigger manually or on push to no-mock spec.
+name: AI Chat No Mock Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/src/app/endpoints/ai/ai-chat-no-mock.spec.ts'
+      - 'apps/api/src/app/endpoints/ai/langgraph/**'
+      - '.github/workflows/ai-chat-no-mock-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-mock-tests:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run no mock tests (real LangGraph, real OpenAI)
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          OPENAI_API_KEY: ${{ secrets.API_KEY_OPENAI }}
+        run: npx dotenv-cli -e .env.example -- bash -c 'cd apps/api && npx jest src/app/endpoints/ai/ai-chat-no-mock.spec.ts --no-cache --verbose'
