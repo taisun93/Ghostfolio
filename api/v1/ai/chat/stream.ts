@@ -22,10 +22,11 @@ function getBearerToken(req: Request): string | null {
 }
 
 function getBackendStreamUrl(): string | null {
-  const base = (
+  const explicit = (
     process.env.GHOSTFOLIO_API_URL ??
     process.env.API_URL
   )?.trim();
+  const base = explicit || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
   if (!base) return null;
   const url = base.replace(/\/$/, '');
   return `${url}${STREAM_PATH}`;
